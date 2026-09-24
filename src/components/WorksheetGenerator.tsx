@@ -258,7 +258,7 @@ export const WorksheetGenerator: React.FC = () => {
   const acrossWords = layout.placedWords.filter((w) => w.direction === 'across');
   const downWords = layout.placedWords.filter((w) => w.direction === 'down');
 
-  // Capture worksheet as crisp high-resolution canvas
+  // Capture worksheet as crisp high-resolution canvas with exact standard A4 proportions (1:1.414)
   const captureWorksheetCanvas = async (): Promise<HTMLCanvasElement | null> => {
     if (!worksheetRef.current) return null;
     setIsExportingUnscaled(true);
@@ -267,10 +267,13 @@ export const WorksheetGenerator: React.FC = () => {
 
     try {
       const canvas = await html2canvas(worksheetRef.current, {
-        scale: 2, // 2x high resolution
+        scale: 2, // 2x high resolution: exactly 1588 x 2246 px (ISO 216 standard A4 ratio)
         useCORS: true,
         backgroundColor: '#ffffff',
         width: 794,
+        height: 1123,
+        windowWidth: 794,
+        windowHeight: 1123,
         logging: false,
       });
       return canvas;
@@ -279,7 +282,7 @@ export const WorksheetGenerator: React.FC = () => {
     }
   };
 
-  // Direct PDF export and file download using jsPDF
+  // Direct PDF export and file download using jsPDF (Strict A4 WYSIWYG)
   const handleExportPdf = async () => {
     if (!worksheetRef.current) return;
     if (parsedItems.length === 0) {
@@ -293,7 +296,7 @@ export const WorksheetGenerator: React.FC = () => {
       const canvas = await captureWorksheetCanvas();
       if (!canvas) throw new Error('Gagal menangkap kanvas');
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -301,23 +304,12 @@ export const WorksheetGenerator: React.FC = () => {
         compress: true,
       });
 
-      const pdfWidth = pdf.internal.pageSize.getWidth(); // 210mm
-      const pdfHeight = pdf.internal.pageSize.getHeight(); // 297mm
+      // Standard ISO 216 A4 dimensions in mm: 210mm x 297mm
+      const pdfWidth = 210;
+      const pdfHeight = 297;
 
-      // Calculate height in mm keeping canvas aspect ratio
-      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      if (imgHeight <= pdfHeight) {
-        // Fits nicely on 1 single A4 sheet
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, imgHeight, undefined, 'FAST');
-      } else {
-        // Scale down slightly to guarantee 1 single page
-        const scaleFactor = pdfHeight / imgHeight;
-        const finalW = pdfWidth * scaleFactor;
-        const finalH = pdfHeight;
-        const marginX = (pdfWidth - finalW) / 2;
-        pdf.addImage(imgData, 'JPEG', marginX, 0, finalW, finalH, undefined, 'FAST');
-      }
+      // Exact WYSIWYG match mapped 1:1 onto the A4 single page
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
 
       const safeTitle = title.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'teka-teki-silang';
       const fileName = `${safeTitle}${showAnswerKey ? '_kunci_jawaban' : ''}.pdf`;
@@ -604,13 +596,16 @@ export const WorksheetGenerator: React.FC = () => {
               effectiveScale < 1
                 ? {
                     width: `${Math.round(794 * effectiveScale)}px`,
-                    height: `${Math.round(sheetHeight * effectiveScale)}px`,
+                    height: `${Math.round(1123 * effectiveScale)}px`,
                   }
                 : {
                     width: '794px',
+                    height: '1123px',
                   }
             }
-            className="relative shrink-0 transition-all duration-150 print:!w-full print:!h-auto"
+            className={`relative shrink-0 ${
+              isExportingUnscaled ? '' : 'transition-all duration-150'
+            } print:!w-full print:!h-auto`}
           >
             <div
               style={
@@ -619,9 +614,11 @@ export const WorksheetGenerator: React.FC = () => {
                       transform: `scale(${effectiveScale})`,
                       transformOrigin: 'top left',
                       width: '794px',
+                      height: '1123px',
                     }
                   : {
                       width: '794px',
+                      height: '1123px',
                     }
               }
               className="print:!transform-none print:!w-full"
@@ -629,8 +626,18 @@ export const WorksheetGenerator: React.FC = () => {
               <div
                 ref={worksheetRef}
                 id="worksheet-a4-page"
-                className="bg-white text-black p-7 sm:p-8 rounded-2xl shadow-xl border border-neutral-300 print:!border-none print:!shadow-none print:!p-0 print:!m-0 print:!w-full print:!rounded-none"
-                style={{ width: '794px', minHeight: '1123px' }}
+                className={`bg-white text-black p-8 ${
+                  isExportingUnscaled
+                    ? 'rounded-none border-none shadow-none'
+                    : 'rounded-xl shadow-lg border border-neutral-300'
+                } print:!border-none print:!shadow-none print:!p-0 print:!m-0 print:!w-full print:!rounded-none flex flex-col justify-between`}
+                style={{
+                  width: '794px',
+                  height: '1123px',
+                  minHeight: '1123px',
+                  maxHeight: '1123px',
+                  boxSizing: 'border-box',
+                }}
               >
                 {/* Header Soal Siswa - Ringkas & Proporsional */}
                 <div className="border-b-2 border-black pb-2.5 mb-3">
@@ -712,7 +719,7 @@ export const WorksheetGenerator: React.FC = () => {
                 </div>
 
                 {/* Clues Section: Mendatar & Menurun - 2 Kolom Rapi */}
-                <div className="grid grid-cols-2 gap-6 mt-3 pt-2.5 border-t-2 border-black">
+                <div className="grid grid-cols-2 gap-6 mt-3 pt-2.5 border-t-2 border-black flex-1 overflow-hidden">
                   {/* Mendatar (Across) */}
                   <div>
                     <h3 className="font-extrabold text-xs uppercase tracking-wider border-b-2 border-black pb-1 mb-2 flex items-center justify-between text-black">
@@ -901,9 +908,15 @@ export const WorksheetGenerator: React.FC = () => {
                 <div className="max-h-60 overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-100 dark:bg-neutral-950 flex items-center justify-center p-2">
                   <img
                     src={exportModal.url}
-                    alt="Hasil TTS"
+                    alt="Hasil TTS A4"
                     className="max-h-52 w-auto object-contain rounded shadow-xs"
                   />
+                </div>
+                <div className="flex justify-between items-center text-xs px-1 text-neutral-600 dark:text-neutral-300">
+                  <span className="font-medium text-neutral-500">Ukuran Gambar:</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    A4 Standar WYSIWYG (1588 × 2246 px)
+                  </span>
                 </div>
                 <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-xs text-amber-900 dark:text-amber-300">
                   <p className="font-semibold flex items-center gap-1.5">
@@ -925,7 +938,7 @@ export const WorksheetGenerator: React.FC = () => {
                 <div className="flex justify-between items-center text-neutral-700 dark:text-neutral-300">
                   <span className="font-medium text-neutral-500">Ukuran & Format:</span>
                   <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                    PDF 1 Lembar Pas (A4)
+                    PDF 1 Lembar Pas A4 WYSIWYG (210 × 297 mm)
                   </span>
                 </div>
               </div>
