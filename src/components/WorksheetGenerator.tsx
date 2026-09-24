@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import html2canvas from 'html2canvas';
+import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import {
   Printer,
@@ -16,9 +16,12 @@ import {
   ExternalLink,
   X,
   Trash2,
+  FileText,
+  KeyRound,
 } from 'lucide-react';
 import { generateCrossword, parseRawInput } from '../utils/crosswordGenerator';
 import { CrosswordLayout } from '../types';
+import { WorksheetPaper } from './WorksheetPaper';
 
 export const WorksheetGenerator: React.FC = () => {
   // Persistence via localStorage so inputs are preserved across page refresh
@@ -47,6 +50,7 @@ export const WorksheetGenerator: React.FC = () => {
     }
   });
 
+  // Active view mode: Lembar Soal (false) vs Kunci Jawaban (true)
   const [showAnswerKey, setShowAnswerKey] = useState(() => {
     try {
       return localStorage.getItem('tts_maker_show_key') === 'true';
@@ -60,8 +64,13 @@ export const WorksheetGenerator: React.FC = () => {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfSuccess, setPdfSuccess] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
-  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Toast notification state
+  const [toast, setToast] = useState<{
+    type: 'success' | 'error' | 'warning';
+    message: string;
+  } | null>(null);
 
   // Modal download preview & fail-safe actions
   const [exportModal, setExportModal] = useState<{
@@ -69,12 +78,22 @@ export const WorksheetGenerator: React.FC = () => {
     type: 'pdf' | 'image';
     url: string;
     fileName: string;
+    isKey: boolean;
   }>({
     isOpen: false,
     type: 'pdf',
     url: '',
     fileName: '',
+    isKey: false,
   });
+
+  // Auto-dismiss toast after 4.5s
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // Save to localStorage automatically whenever inputs change
   useEffect(() => {
@@ -119,6 +138,7 @@ export const WorksheetGenerator: React.FC = () => {
       console.warn('Failed to clear localStorage', e);
     }
     setShowClearConfirm(false);
+    setToast({ type: 'success', message: 'Form isian berhasil dikosongkan.' });
   };
 
   const chatGptPrompt =
@@ -141,14 +161,16 @@ export const WorksheetGenerator: React.FC = () => {
     }
   };
 
-  const worksheetRef = useRef<HTMLDivElement>(null);
+  // Dedicated off-screen container refs for 100% unscaled, pristine A4 export
+  const exportQuestionRef = useRef<HTMLDivElement>(null);
+  const exportAnswerRef = useRef<HTMLDivElement>(null);
+
+  const previewWorksheetRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [scale, setScale] = useState<number>(1);
-  const [sheetHeight, setSheetHeight] = useState<number>(1123);
   const [isFitMode, setIsFitMode] = useState<boolean>(true);
-  const [isExportingUnscaled, setIsExportingUnscaled] = useState<boolean>(false);
 
   // Auto-resize textarea agar kata-kata tidak tertutupi
   useEffect(() => {
@@ -204,6 +226,7 @@ export const WorksheetGenerator: React.FC = () => {
   const handleAutoFit = () => {
     const optimal = findOptimalSeed();
     setSeed(optimal);
+    setToast({ type: 'success', message: `Susunan dioptimalkan ke Variasi ${optimal} (Pas 1 Lembar).` });
   };
 
   // Auto-optimize to best seed if current layout has unplaced words when items change
@@ -227,9 +250,6 @@ export const WorksheetGenerator: React.FC = () => {
           setScale(calculatedScale);
         }
       }
-      if (worksheetRef.current) {
-        setSheetHeight(worksheetRef.current.offsetHeight || 1123);
-      }
     };
 
     updateDimensions();
@@ -241,7 +261,6 @@ export const WorksheetGenerator: React.FC = () => {
     });
 
     if (containerRef.current) observer.observe(containerRef.current);
-    if (worksheetRef.current) observer.observe(worksheetRef.current);
 
     return () => {
       clearTimeout(timer);
@@ -250,7 +269,7 @@ export const WorksheetGenerator: React.FC = () => {
     };
   }, [layout, title, showAnswerKey, rawWords]);
 
-  const effectiveScale = isExportingUnscaled ? 1 : isFitMode ? scale : 1;
+  const effectiveScale = isFitMode ? scale : 1;
 
   const handleNextSeed = () => setSeed((prev) => prev + 1);
   const handlePrevSeed = () => setSeed((prev) => (prev > 1 ? prev - 1 : 9999));
@@ -258,45 +277,143 @@ export const WorksheetGenerator: React.FC = () => {
   const acrossWords = layout.placedWords.filter((w) => w.direction === 'across');
   const downWords = layout.placedWords.filter((w) => w.direction === 'down');
 
-  // Capture worksheet as crisp high-resolution canvas with exact standard A4 proportions (1:1.414)
-  const captureWorksheetCanvas = async (): Promise<HTMLCanvasElement | null> => {
-    if (!worksheetRef.current) return null;
-    setIsExportingUnscaled(true);
-    // Allow DOM to apply unscaled 1:1 view for crisp capture (150ms ensures render complete)
-    await new Promise((resolve) => setTimeout(resolve, 150));
+  // Helper to sanitize filename
+  const getSafeFileName = (isKey: boolean, ext: 'png' | 'pdf') => {
+    const safeTitle = (title.trim() || 'Teka-Teki-Silang')
+      .replace(/[^a-zA-Z0-9_\-\s]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+    return `TTS-${safeTitle}${isKey ? '-KunciJawaban' : ''}.${ext}`;
+  };
+
+  /**
+   * Capture A4 Worksheet Container as PNG Data URL using html-to-image (toPng).
+   * Adheres strictly to:
+   * 1. Awaiting document.fonts.ready
+   * 2. Capturing unscaled dedicated container (width: 794px, height: scrollHeight)
+   * 3. pixelRatio: 2.5 and backgroundColor: #ffffff
+   * 4. Filter out any UI controls or .no-export elements
+   */
+  const captureWorksheetToPng = async (isKey: boolean): Promise<string> => {
+    // 1. Await font loading
+    await document.fonts.ready;
+
+    // 2. Select target container
+    const targetElement = isKey ? exportAnswerRef.current : exportQuestionRef.current;
+    if (!targetElement) {
+      throw new Error('Container lembar kerja ekspor tidak ditemukan di DOM.');
+    }
+
+    // 3. Get exact scroll dimensions
+    const exportWidth = targetElement.scrollWidth || 794;
+    const exportHeight = targetElement.scrollHeight || 1123;
+
+    // 4. Capture with toPng
+    const dataUrl = await toPng(targetElement, {
+      pixelRatio: 2.5, // 2.5x high resolution (~1985 x 2807 px)
+      backgroundColor: '#ffffff',
+      width: exportWidth,
+      height: exportHeight,
+      cacheBust: true,
+      filter: (node) => {
+        if (node instanceof HTMLElement) {
+          if (node.classList.contains('no-export') || node.classList.contains('print:hidden')) {
+            return false;
+          }
+        }
+        return true;
+      },
+    });
+
+    return dataUrl;
+  };
+
+  /**
+   * Direct PNG Image Export and Download
+   */
+  const handleExportImage = async (isKey: boolean = showAnswerKey) => {
+    if (parsedItems.length === 0) {
+      setToast({
+        type: 'warning',
+        message: 'Silakan masukkan soal dan jawaban terlebih dahulu sebelum mendownload Gambar.',
+      });
+      return;
+    }
 
     try {
-      const canvas = await html2canvas(worksheetRef.current, {
-        scale: 2, // 2x high resolution: exactly 1588 x 2246 px (ISO 216 standard A4 ratio)
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        width: 794,
-        height: 1123,
-        windowWidth: 794,
-        windowHeight: 1123,
-        logging: false,
+      setIsExporting(true);
+      const dataUrl = await captureWorksheetToPng(isKey);
+      const fileName = getSafeFileName(isKey, 'png');
+
+      // Convert dataUrl to Blob
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Trigger standard browser download
+      try {
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = blobUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (dlErr) {
+        console.warn('Unduhan otomatis dibatasi oleh browser/iframe:', dlErr);
+      }
+
+      // Open fallback modal for mobile long-press and direct preview
+      setExportModal({
+        isOpen: true,
+        type: 'image',
+        url: blobUrl,
+        fileName,
+        isKey,
       });
-      return canvas;
+
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 2500);
+      setToast({
+        type: 'success',
+        message: `Gambar ${isKey ? 'Kunci Jawaban' : 'Lembar Soal'} berhasil diproses!`,
+      });
+    } catch (err) {
+      console.error('Gagal mengekspor gambar:', err);
+      setToast({
+        type: 'error',
+        message: `Gagal membuat gambar: ${err instanceof Error ? err.message : String(err)}`,
+      });
     } finally {
-      setIsExportingUnscaled(false);
+      setIsExporting(false);
     }
   };
 
-  // Direct PDF export and file download using jsPDF (Strict A4 WYSIWYG)
-  const handleExportPdf = async () => {
-    if (!worksheetRef.current) return;
+  /**
+   * Direct PDF Export and Download using jsPDF
+   * A4 Portrait with 10 mm margin. Multi-page vertical slice fallback if content exceeds single page.
+   */
+  const handleExportPdf = async (isKey: boolean = showAnswerKey) => {
     if (parsedItems.length === 0) {
-      setWarningMessage('Silakan masukkan soal dan jawaban terlebih dahulu sebelum mendownload PDF.');
-      setTimeout(() => setWarningMessage(null), 4000);
+      setToast({
+        type: 'warning',
+        message: 'Silakan masukkan soal dan jawaban terlebih dahulu sebelum mendownload PDF.',
+      });
       return;
     }
 
     try {
       setIsExportingPdf(true);
-      const canvas = await captureWorksheetCanvas();
-      if (!canvas) throw new Error('Gagal menangkap kanvas');
+      const dataUrl = await captureWorksheetToPng(isKey);
+      const fileName = getSafeFileName(isKey, 'pdf');
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      // Load image to compute true dimensions
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -304,123 +421,121 @@ export const WorksheetGenerator: React.FC = () => {
         compress: true,
       });
 
-      // Standard ISO 216 A4 dimensions in mm: 210mm x 297mm
-      const pdfWidth = 210;
-      const pdfHeight = 297;
+      const pdfWidth = 210; // Standard A4 width in mm
+      const pdfHeight = 297; // Standard A4 height in mm
+      const margin = 10; // 10 mm margin
+      const printableWidth = pdfWidth - 2 * margin; // 190 mm
+      const printableHeight = pdfHeight - 2 * margin; // 277 mm
 
-      // Exact WYSIWYG match mapped 1:1 onto the A4 single page
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+      const imgPdfHeight = (img.naturalHeight * printableWidth) / img.naturalWidth;
 
-      const safeTitle = title.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'teka-teki-silang';
-      const fileName = `${safeTitle}${showAnswerKey ? '_kunci_jawaban' : ''}.pdf`;
+      if (imgPdfHeight <= printableHeight) {
+        // Fits perfectly on 1 single page
+        pdf.addImage(dataUrl, 'PNG', margin, margin, printableWidth, imgPdfHeight, undefined, 'FAST');
+      } else {
+        // Multi-page slicing without stretching or clipping
+        const pagePixelHeight = Math.floor((printableHeight * img.naturalWidth) / printableWidth);
+        const totalPages = Math.ceil(img.naturalHeight / pagePixelHeight);
 
-      // Generate Blob & URL for modal preview & download trigger
+        for (let p = 0; p < totalPages; p++) {
+          if (p > 0) {
+            pdf.addPage('a4', 'portrait');
+          }
+
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = img.naturalWidth;
+          const sourceY = p * pagePixelHeight;
+          const sliceH = Math.min(pagePixelHeight, img.naturalHeight - sourceY);
+          sliceCanvas.height = sliceH;
+
+          const sliceCtx = sliceCanvas.getContext('2d');
+          if (sliceCtx) {
+            sliceCtx.fillStyle = '#ffffff';
+            sliceCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+            sliceCtx.drawImage(
+              img,
+              0,
+              sourceY,
+              img.naturalWidth,
+              sliceH,
+              0,
+              0,
+              img.naturalWidth,
+              sliceH
+            );
+
+            const sliceDataUrl = sliceCanvas.toDataURL('image/png');
+            const slicePdfHeight = (sliceH * printableWidth) / img.naturalWidth;
+            pdf.addImage(sliceDataUrl, 'PNG', margin, margin, printableWidth, slicePdfHeight, undefined, 'FAST');
+          }
+        }
+      }
+
       const pdfBlob = pdf.output('blob');
       const blobUrl = URL.createObjectURL(pdfBlob);
 
       // Trigger standard browser download
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      // Open fail-safe modal with direct button & preview
-      setExportModal({
-        isOpen: true,
-        type: 'pdf',
-        url: blobUrl,
-        fileName,
-      });
-
-      setPdfSuccess(true);
-      setTimeout(() => setPdfSuccess(false), 2500);
-    } catch (err) {
-      console.error('Failed to export PDF', err);
-      setWarningMessage('Gagal membuat PDF otomatis. Anda dapat mencoba tombol Cetak di atas.');
-      setTimeout(() => setWarningMessage(null), 5000);
-    } finally {
-      setIsExportingPdf(false);
-    }
-  };
-
-  // Direct PNG image export and file download using Blob URL
-  const handleExportImage = async () => {
-    if (!worksheetRef.current) return;
-    if (parsedItems.length === 0) {
-      setWarningMessage('Silakan masukkan soal dan jawaban terlebih dahulu sebelum mendownload Gambar.');
-      setTimeout(() => setWarningMessage(null), 4000);
-      return;
-    }
-
-    try {
-      setIsExporting(true);
-      const canvas = await captureWorksheetCanvas();
-      if (!canvas) throw new Error('Gagal menangkap kanvas');
-
-      const safeTitle = title.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'teka-teki-silang';
-      const fileName = `${safeTitle}${showAnswerKey ? '_kunci_jawaban' : ''}.png`;
-
-      // Use Blob with URL.createObjectURL for 100% reliable download on mobile and desktop
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          const dataUrl = canvas.toDataURL('image/png');
-          const link = document.createElement('a');
-          link.download = fileName;
-          link.href = dataUrl;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-
-          setExportModal({
-            isOpen: true,
-            type: 'image',
-            url: dataUrl,
-            fileName,
-          });
-          return;
-        }
-
-        const blobUrl = URL.createObjectURL(blob);
+      try {
         const link = document.createElement('a');
         link.download = fileName;
         link.href = blobUrl;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+      } catch (dlErr) {
+        console.warn('Unduhan PDF otomatis dibatasi oleh browser/iframe:', dlErr);
+      }
 
-        setExportModal({
-          isOpen: true,
-          type: 'image',
-          url: blobUrl,
-          fileName,
-        });
-      }, 'image/png');
+      // Open fallback modal
+      setExportModal({
+        isOpen: true,
+        type: 'pdf',
+        url: blobUrl,
+        fileName,
+        isKey,
+      });
 
-      setExportSuccess(true);
-      setTimeout(() => setExportSuccess(false), 2500);
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 2500);
+      setToast({
+        type: 'success',
+        message: `PDF ${isKey ? 'Kunci Jawaban' : 'Lembar Soal'} berhasil dibuat!`,
+      });
     } catch (err) {
-      console.error('Failed to export image', err);
-      setWarningMessage('Gagal mendownload gambar. Silakan coba lagi.');
-      setTimeout(() => setWarningMessage(null), 5000);
+      console.error('Gagal mengekspor PDF:', err);
+      setToast({
+        type: 'error',
+        message: `Gagal membuat PDF: ${err instanceof Error ? err.message : String(err)}`,
+      });
     } finally {
-      setIsExporting(false);
+      setIsExportingPdf(false);
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Notifikasi / Warning Message Banner */}
-      {warningMessage && (
-        <div className="p-3 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 rounded-xl text-xs flex items-center justify-between gap-2 shadow-sm animate-in fade-in slide-in-from-top-2">
+      {/* Toast Notification Banner */}
+      {toast && (
+        <div
+          className={`fixed top-4 right-4 z-50 max-w-md p-3.5 rounded-xl shadow-lg border text-xs flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 ${
+            toast.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/90 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
+              : toast.type === 'error'
+              ? 'bg-rose-50 dark:bg-rose-950/90 border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-100'
+              : 'bg-amber-50 dark:bg-amber-950/90 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100'
+          }`}
+        >
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span className="font-semibold">{warningMessage}</span>
+            {toast.type === 'success' ? (
+              <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+            )}
+            <span className="font-semibold">{toast.message}</span>
           </div>
           <button
             type="button"
-            onClick={() => setWarningMessage(null)}
+            onClick={() => setToast(null)}
             className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer p-0.5"
           >
             <X className="w-4 h-4" />
@@ -538,14 +653,14 @@ export const WorksheetGenerator: React.FC = () => {
 
       {/* Pratinjau Lembar Kerja (Worksheet) - Responsive WYSIWYG Container */}
       <div className="w-full flex flex-col items-center">
-        {/* Mobile WYSIWYG Indicator & Mode Toggle */}
-        <div className="print:hidden w-full max-w-[794px] flex items-center justify-between px-2 mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+        {/* Mobile WYSIWYG Header Bar */}
+        <div className="print:hidden w-full max-w-[794px] flex flex-wrap items-center justify-between gap-2 px-2 mb-3 text-xs text-neutral-500 dark:text-neutral-400">
           <div className="flex items-center gap-2">
             <span className="font-bold text-neutral-900 dark:text-white text-sm">
               Pratinjau
             </span>
             <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-              ✓ 1 Lembar Pas
+              ✓ 1 Lembar A4
             </span>
             {scale < 1 && (
               <span className="text-[10px] font-mono bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 px-2 py-0.5 rounded-full font-medium">
@@ -553,12 +668,41 @@ export const WorksheetGenerator: React.FC = () => {
               </span>
             )}
           </div>
+
+          {/* Mode Switcher: Lembar Soal vs Kunci Jawaban */}
+          <div className="flex items-center gap-1.5 p-1 bg-neutral-200/70 dark:bg-neutral-800/80 rounded-xl border border-neutral-300 dark:border-neutral-700">
+            <button
+              type="button"
+              onClick={() => setShowAnswerKey(false)}
+              className={`px-3 py-1 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                !showAnswerKey
+                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Lembar Soal</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAnswerKey(true)}
+              className={`px-3 py-1 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                showAnswerKey
+                  ? 'bg-amber-500 text-neutral-950 shadow-xs'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Kunci Jawaban</span>
+            </button>
+          </div>
+
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleAutoFit}
               title="Pilih susunan paling ringkas dan pas untuk 1 lembar kertas"
-              className="text-[11px] px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold transition cursor-pointer shadow-2xs flex items-center gap-1"
+              className="text-[11px] px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold transition cursor-pointer shadow-2xs flex items-center gap-1"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Susunan Pas 1 Lembar</span>
@@ -566,17 +710,17 @@ export const WorksheetGenerator: React.FC = () => {
             <button
               type="button"
               onClick={() => window.print()}
-              title="Cetak langsung menggunakan printer browser"
-              className="text-[11px] px-2 py-1 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs flex items-center gap-1"
+              title="Cetak langsung atau Simpan sebagai PDF via printer peramban"
+              className="text-[11px] px-2.5 py-1.5 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs flex items-center gap-1"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Cetak</span>
+              <span>Cetak (Browser)</span>
             </button>
             {scale < 1 && (
               <button
                 type="button"
                 onClick={() => setIsFitMode(!isFitMode)}
-                className="text-[11px] px-2.5 py-1 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs"
+                className="text-[11px] px-2.5 py-1.5 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs"
               >
                 {isFitMode ? '🔍 100%' : '📱 Fit HP'}
               </button>
@@ -584,7 +728,7 @@ export const WorksheetGenerator: React.FC = () => {
           </div>
         </div>
 
-        {/* Viewport Box */}
+        {/* Viewport Box for Interactive Screen Display */}
         <div
           ref={containerRef}
           className={`w-full flex justify-center ${
@@ -603,9 +747,7 @@ export const WorksheetGenerator: React.FC = () => {
                     height: '1123px',
                   }
             }
-            className={`relative shrink-0 ${
-              isExportingUnscaled ? '' : 'transition-all duration-150'
-            } print:!w-full print:!h-auto`}
+            className="relative shrink-0 transition-all duration-150 print:!w-full print:!h-auto"
           >
             <div
               style={
@@ -623,249 +765,151 @@ export const WorksheetGenerator: React.FC = () => {
               }
               className="print:!transform-none print:!w-full"
             >
-              <div
-                ref={worksheetRef}
-                id="worksheet-a4-page"
-                className={`bg-white text-black p-8 ${
-                  isExportingUnscaled
-                    ? 'rounded-none border-none shadow-none'
-                    : 'rounded-xl shadow-lg border border-neutral-300'
-                } print:!border-none print:!shadow-none print:!p-0 print:!m-0 print:!w-full print:!rounded-none flex flex-col justify-between`}
-                style={{
-                  width: '794px',
-                  height: '1123px',
-                  minHeight: '1123px',
-                  maxHeight: '1123px',
-                  boxSizing: 'border-box',
-                }}
-              >
-                {/* Header Soal Siswa - Ringkas & Proporsional */}
-                <div className="border-b-2 border-black pb-2.5 mb-3">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1 pr-4">
-                      <h1 className="text-xl md:text-2xl font-black tracking-tight uppercase text-black min-h-[28px] leading-snug">
-                        {title.trim()}
-                      </h1>
-                    </div>
-                    {/* Kotak Nilai Kosong Tanpa Tulisan */}
-                    <div className="border-2 border-black rounded w-[72px] h-[52px] shrink-0" />
-                  </div>
-
-                  {/* Isian Identitas Siswa: Nama dan Kelas */}
-                  <div className="grid grid-cols-2 gap-4 mt-2 pt-2 border-t border-dashed border-neutral-400 text-xs font-semibold">
-                    <div>Nama: ____________________________________</div>
-                    <div>Kelas: _________________</div>
-                  </div>
-                </div>
-
-                {/* Crossword Grid Table */}
-                <div className="flex justify-center my-3 overflow-hidden">
-                  {layout.width > 0 ? (
-                    <div
-                      className="grid gap-0 border-2 border-neutral-900 bg-neutral-100 shadow-xs"
-                      style={{
-                        gridTemplateColumns: `repeat(${layout.width}, ${cellSize}px)`,
-                        gridTemplateRows: `repeat(${layout.height}, ${cellSize}px)`,
-                      }}
-                    >
-                      {Array.from({ length: layout.height }).map((_, r) =>
-                        Array.from({ length: layout.width }).map((_, c) => {
-                          const key = `${r},${c}`;
-                          const cell = layout.cells[key];
-
-                          if (!cell) {
-                            return (
-                              <div
-                                key={key}
-                                className="bg-neutral-200/60 w-full h-full border border-neutral-200/50"
-                              />
-                            );
-                          }
-
-                          return (
-                            <div
-                              key={key}
-                              className="relative bg-white border border-neutral-900 flex items-center justify-center"
-                              style={{ width: cellSize, height: cellSize }}
-                            >
-                              {cell.number !== undefined && (
-                                <span
-                                  className={`absolute top-[1px] left-[2px] ${
-                                    cellSize < 22 ? 'text-[6px]' : cellSize < 26 ? 'text-[7px]' : 'text-[8px]'
-                                  } font-mono leading-none font-bold text-neutral-900 select-none`}
-                                >
-                                  {cell.number}
-                                </span>
-                              )}
-                              {showAnswerKey && (
-                                <span
-                                  className={`font-mono font-black ${
-                                    cellSize < 22 ? 'text-[10px]' : cellSize < 26 ? 'text-xs' : 'text-sm'
-                                  } text-black uppercase select-none`}
-                                >
-                                  {cell.letter}
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  ) : (
-                    <div className="p-8 text-neutral-500 italic text-center text-xs">
-                      Masukkan kata jawaban dan petunjuk untuk menghasilkan kotak teka-teki silang.
-                    </div>
-                  )}
-                </div>
-
-                {/* Clues Section: Mendatar & Menurun - 2 Kolom Rapi */}
-                <div className="grid grid-cols-2 gap-6 mt-3 pt-2.5 border-t-2 border-black flex-1 overflow-hidden">
-                  {/* Mendatar (Across) */}
-                  <div>
-                    <h3 className="font-extrabold text-xs uppercase tracking-wider border-b-2 border-black pb-1 mb-2 flex items-center justify-between text-black">
-                      <span>Mendatar</span>
-                      <span className="text-[11px] font-semibold text-neutral-700">({acrossWords.length} Soal)</span>
-                    </h3>
-                    <ol className="space-y-1.5 text-[11px] leading-snug">
-                      {acrossWords.map((item) => (
-                        <li key={item.id} className="flex gap-1.5 items-start">
-                          <span className="font-black min-w-[18px] text-neutral-900">{item.number}.</span>
-                          <div className="flex-1">
-                            <span className="text-black break-words">{item.clue}</span>
-                            {showAnswerKey && (
-                              <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300 text-[10px]">
-                                [{item.word}]
-                              </span>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-
-                  {/* Menurun (Down) */}
-                  <div>
-                    <h3 className="font-extrabold text-xs uppercase tracking-wider border-b-2 border-black pb-1 mb-2 flex items-center justify-between text-black">
-                      <span>Menurun</span>
-                      <span className="text-[11px] font-semibold text-neutral-700">({downWords.length} Soal)</span>
-                    </h3>
-                    <ol className="space-y-1.5 text-[11px] leading-snug">
-                      {downWords.map((item) => (
-                        <li key={item.id} className="flex gap-1.5 items-start">
-                          <span className="font-black min-w-[18px] text-neutral-900">{item.number}.</span>
-                          <div className="flex-1">
-                            <span className="text-black break-words">{item.clue}</span>
-                            {showAnswerKey && (
-                              <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300 text-[10px]">
-                                [{item.word}]
-                              </span>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                </div>
+              {/* Interactive Screen Preview */}
+              <div ref={previewWorksheetRef}>
+                <WorksheetPaper
+                  title={title}
+                  layout={layout}
+                  cellSize={cellSize}
+                  acrossWords={acrossWords}
+                  downWords={downWords}
+                  showAnswerKey={showAnswerKey}
+                  isExportMode={false}
+                  id="worksheet-a4-page"
+                />
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tombol Kontrol & Aksi (Diletakkan di Bawah Pratinjau, Hidden saat Print) */}
-      <div className="print:hidden w-full max-w-[794px] mx-auto bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-3 sm:p-4 rounded-2xl shadow-md">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
-          {/* Tombol Sebelumnya */}
+      {/* DEDICATED OFF-SCREEN CLEAN CONTAINERS FOR EXPORT (Always 100% Unscaled A4 794px, No Transforms, No CSS Color Bugs) */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          left: '-9999px',
+          top: 0,
+          zIndex: -100,
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
+      >
+        {/* Export Container: Lembar Soal (Kosong) */}
+        <div ref={exportQuestionRef} style={{ width: '794px', backgroundColor: '#ffffff' }}>
+          <WorksheetPaper
+            title={title}
+            layout={layout}
+            cellSize={cellSize}
+            acrossWords={acrossWords}
+            downWords={downWords}
+            showAnswerKey={false}
+            isExportMode={true}
+          />
+        </div>
+
+        {/* Export Container: Kunci Jawaban (Terisi) */}
+        <div ref={exportAnswerRef} style={{ width: '794px', backgroundColor: '#ffffff' }}>
+          <WorksheetPaper
+            title={title}
+            layout={layout}
+            cellSize={cellSize}
+            acrossWords={acrossWords}
+            downWords={downWords}
+            showAnswerKey={true}
+            isExportMode={true}
+          />
+        </div>
+      </div>
+
+      {/* Action Bar: Navigasi Variasi & Tombol Ekspor Utama */}
+      <div className="print:hidden w-full max-w-[794px] mx-auto bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-3.5 sm:p-4 rounded-2xl shadow-md space-y-3">
+        {/* Row 1: Variasi Layout Switcher */}
+        <div className="flex items-center justify-between gap-2 border-b border-neutral-200 dark:border-neutral-800 pb-3">
           <button
             type="button"
             onClick={handlePrevSeed}
             title="Susunan Layout Sebelumnya"
-            className="h-11 px-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1 text-xs cursor-pointer"
+            className="h-10 px-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100 font-bold rounded-xl transition flex items-center justify-center gap-1 text-xs cursor-pointer"
           >
             <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
-            <span>Sebelumnya</span>
+            <span className="hidden sm:inline">Sebelumnya</span>
           </button>
 
-          {/* Kolom Variasi */}
-          <div className="h-11 px-2 bg-neutral-50 dark:bg-neutral-800 rounded-xl border border-neutral-300 dark:border-neutral-700 shadow-xs flex items-center justify-center text-center">
+          <div className="h-10 px-4 bg-neutral-50 dark:bg-neutral-800/80 rounded-xl border border-neutral-300 dark:border-neutral-700 shadow-2xs flex items-center justify-center text-center">
             <span className="text-xs font-bold font-mono text-neutral-900 dark:text-white">
               Variasi {seed}
             </span>
           </div>
 
-          {/* Tombol Berikutnya */}
           <button
             type="button"
             onClick={handleNextSeed}
             title="Susunan Layout Berikutnya"
-            className="h-11 px-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1 text-xs cursor-pointer"
+            className="h-10 px-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100 font-bold rounded-xl transition flex items-center justify-center gap-1 text-xs cursor-pointer"
           >
-            <span>Berikutnya</span>
+            <span className="hidden sm:inline">Berikutnya</span>
             <ChevronRight className="w-4 h-4 stroke-[2.5]" />
           </button>
+        </div>
 
-          {/* Checkbox Kunci Jawaban */}
-          <label className="h-11 px-2.5 bg-neutral-50 dark:bg-neutral-800 rounded-xl border border-neutral-300 dark:border-neutral-700 shadow-xs flex items-center justify-center gap-2 cursor-pointer hover:border-amber-400 transition text-xs font-bold text-neutral-800 dark:text-neutral-200 select-none">
-            <input
-              type="checkbox"
-              checked={showAnswerKey}
-              onChange={(e) => setShowAnswerKey(e.target.checked)}
-              className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 cursor-pointer"
-            />
-            <span className="text-[11px] sm:text-xs">Kunci Jawaban</span>
-          </label>
-
-          {/* Tombol Download PDF */}
-          <button
-            type="button"
-            onClick={handleExportPdf}
-            disabled={isExportingPdf}
-            className="h-11 px-2.5 bg-neutral-900 hover:bg-black active:scale-[0.98] text-white dark:bg-neutral-100 dark:hover:bg-white dark:text-neutral-950 font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-60"
-            title="Download file lembar kerja dalam format PDF langsung ke perangkat Anda"
-          >
-            {pdfSuccess ? (
-              <>
-                <Check className="w-4 h-4 text-emerald-400 dark:text-emerald-600 stroke-[3]" />
-                <span>PDF Tersimpan!</span>
-              </>
-            ) : isExportingPdf ? (
-              <>
+        {/* Row 2: Export Action Buttons */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* Tombol Ekspor PDF */}
+          <div className="flex rounded-xl overflow-hidden shadow-xs border border-neutral-300 dark:border-neutral-700">
+            <button
+              type="button"
+              onClick={() => handleExportPdf(false)}
+              disabled={isExportingPdf}
+              className="flex-1 h-12 px-3 bg-neutral-900 hover:bg-black active:scale-[0.98] text-white dark:bg-neutral-100 dark:hover:bg-white dark:text-neutral-950 font-bold transition flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-60 border-r border-neutral-700 dark:border-neutral-300"
+              title="Download Lembar Soal (Kosong) dalam format PDF A4"
+            >
+              {isExportingPdf && !showAnswerKey ? (
                 <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
-                <span>Membuat PDF...</span>
-              </>
-            ) : (
-              <>
+              ) : (
                 <FileDown className="w-4 h-4" />
-                <span>Download PDF</span>
-              </>
-            )}
-          </button>
+              )}
+              <span>Unduh PDF (Soal)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportPdf(true)}
+              disabled={isExportingPdf}
+              className="px-3 h-12 bg-neutral-800 hover:bg-neutral-900 active:scale-[0.98] text-amber-400 dark:bg-neutral-200 dark:hover:bg-neutral-300 dark:text-amber-800 font-bold transition flex items-center justify-center gap-1 text-xs cursor-pointer disabled:opacity-60"
+              title="Download Kunci Jawaban (Terisi) dalam format PDF A4"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>+ Kunci</span>
+            </button>
+          </div>
 
-          {/* Tombol Download Gambar */}
-          <button
-            type="button"
-            onClick={handleExportImage}
-            disabled={isExporting}
-            className="h-11 px-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 active:scale-[0.98] text-neutral-950 font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-60"
-            title="Download file lembar kerja dalam format gambar PNG beresolusi tinggi"
-          >
-            {exportSuccess ? (
-              <>
-                <Check className="w-4 h-4 text-neutral-950 stroke-[3]" />
-                <span>Gambar Tersimpan!</span>
-              </>
-            ) : isExporting ? (
-              <>
+          {/* Tombol Ekspor Gambar PNG */}
+          <div className="flex rounded-xl overflow-hidden shadow-xs border border-amber-400 dark:border-amber-600">
+            <button
+              type="button"
+              onClick={() => handleExportImage(false)}
+              disabled={isExporting}
+              className="flex-1 h-12 px-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 active:scale-[0.98] text-neutral-950 font-bold transition flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-60 border-r border-amber-600 dark:border-amber-700"
+              title="Download Lembar Soal (Kosong) dalam format Gambar PNG resolusi tinggi"
+            >
+              {isExporting && !showAnswerKey ? (
                 <RefreshCw className="w-4 h-4 animate-spin text-neutral-950" />
-                <span>Memproses...</span>
-              </>
-            ) : (
-              <>
+              ) : (
                 <ImageIcon className="w-4 h-4" />
-                <span>Download Gambar</span>
-              </>
-            )}
-          </button>
+              )}
+              <span>Unduh Gambar (Soal)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportImage(true)}
+              disabled={isExporting}
+              className="px-3 h-12 bg-amber-600 hover:bg-amber-700 active:scale-[0.98] text-white font-bold transition flex items-center justify-center gap-1 text-xs cursor-pointer disabled:opacity-60"
+              title="Download Kunci Jawaban (Terisi) dalam format Gambar PNG"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>+ Kunci</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -885,7 +929,9 @@ export const WorksheetGenerator: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-sm sm:text-base text-neutral-900 dark:text-white">
-                    {exportModal.type === 'pdf' ? 'Dokumen PDF Berhasil Dibuat!' : 'Gambar TTS Berhasil Dibuat!'}
+                    {exportModal.type === 'pdf'
+                      ? `Dokumen PDF ${exportModal.isKey ? 'Kunci Jawaban' : 'Lembar Soal'} Siap!`
+                      : `Gambar ${exportModal.isKey ? 'Kunci Jawaban' : 'Lembar Soal'} Siap!`}
                   </h3>
                   <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
                     File telah diproses dan unduhan otomatis telah dimulai
@@ -915,7 +961,7 @@ export const WorksheetGenerator: React.FC = () => {
                 <div className="flex justify-between items-center text-xs px-1 text-neutral-600 dark:text-neutral-300">
                   <span className="font-medium text-neutral-500">Ukuran Gambar:</span>
                   <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                    A4 Standar WYSIWYG (1588 × 2246 px)
+                    A4 Standar WYSIWYG (1985 × 2807 px)
                   </span>
                 </div>
                 <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-xs text-amber-900 dark:text-amber-300">
@@ -923,7 +969,7 @@ export const WorksheetGenerator: React.FC = () => {
                     <span>📱</span> Tips Pengguna HP:
                   </p>
                   <p className="mt-1 text-[11px] leading-relaxed">
-                    Jika browser tidak otomatis mendownload, Anda dapat <strong>menyentuh & tahan (tekan lama)</strong> gambar di atas, lalu pilih <strong>&quot;Simpan Gambar&quot;</strong> / <strong>&quot;Download Gambar&quot;</strong> ke galeri.
+                    Jika peramban tidak otomatis mendownload, Anda dapat <strong>menyentuh & tahan (tekan lama)</strong> gambar di atas, lalu pilih <strong>&quot;Simpan Gambar&quot;</strong> / <strong>&quot;Download Gambar&quot;</strong> ke galeri.
                   </p>
                 </div>
               </div>
@@ -938,31 +984,44 @@ export const WorksheetGenerator: React.FC = () => {
                 <div className="flex justify-between items-center text-neutral-700 dark:text-neutral-300">
                   <span className="font-medium text-neutral-500">Ukuran & Format:</span>
                   <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                    PDF 1 Lembar Pas A4 WYSIWYG (210 × 297 mm)
+                    PDF A4 Portrait Margin 10mm (210 × 297 mm)
                   </span>
                 </div>
               </div>
             )}
 
             {/* Tombol Aksi Modal */}
-            <div className="flex flex-col sm:flex-row gap-2 pt-1">
-              <a
-                href={exportModal.url}
-                download={exportModal.fileName}
-                className="flex-1 h-11 px-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 text-xs cursor-pointer text-center"
-              >
-                <Download className="w-4 h-4" />
-                <span>Simpan / Unduh Ulang</span>
-              </a>
-              <a
-                href={exportModal.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="h-11 px-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold rounded-xl transition flex items-center justify-center gap-1.5 text-xs cursor-pointer text-center"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>Buka di Tab Baru</span>
-              </a>
+            <div className="flex flex-col gap-2 pt-1">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <a
+                  href={exportModal.url}
+                  download={exportModal.fileName}
+                  className="flex-1 h-11 px-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 text-xs cursor-pointer text-center"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Simpan / Unduh Ulang</span>
+                </a>
+                <a
+                  href={exportModal.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-11 px-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold rounded-xl transition flex items-center justify-center gap-1.5 text-xs cursor-pointer text-center"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Buka di Tab Baru</span>
+                </a>
+              </div>
+
+              {exportModal.type === 'pdf' && (
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="w-full h-10 px-3 bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100 font-semibold rounded-xl transition flex items-center justify-center gap-1.5 text-xs cursor-pointer text-center"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Langsung / Simpan PDF (Dialog Browser)</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
