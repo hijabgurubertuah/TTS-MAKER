@@ -34,7 +34,7 @@ export const WorksheetPaper: React.FC<WorksheetPaperProps> = ({
       } flex flex-col justify-between`}
       style={{
         width: '794px',
-        minHeight: '1123px',
+        height: '1123px',
         boxSizing: 'border-box',
         backgroundColor: '#ffffff',
         color: '#000000',
