@@ -637,10 +637,10 @@ export const WorksheetGenerator: React.FC = () => {
 
       {/* Input Card: Judul dan Daftar Kata Jawaban (Hidden when printing) */}
       <div className="print:hidden bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 md:p-6 shadow-sm space-y-4">
-        {/* Sub-options for 2-per-page if active: Salin Sama vs 2 TTS Berbeda */}
+        {/* Sub-options for 2-per-page if active: Normal vs 2 TTS Berbeda */}
         {printLayout === '2_per_page' && (
           <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-200 dark:border-neutral-700/80 space-y-2 animate-in fade-in">
-            {/* Row 1: Salin Sama vs 2 TTS Berbeda (Balanced Grid on Mobile & Desktop) */}
+            {/* Row 1: Normal vs 2 TTS Berbeda (Balanced Grid on Mobile & Desktop) */}
             <div className="grid grid-cols-2 gap-2 w-full">
               <button
                 type="button"
@@ -652,7 +652,7 @@ export const WorksheetGenerator: React.FC = () => {
                 }`}
               >
                 <CopyCheck className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Salin Sama</span>
+                <span className="truncate">Normal</span>
               </button>
               <button
                 type="button"
