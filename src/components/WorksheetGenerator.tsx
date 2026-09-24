@@ -23,7 +23,7 @@ export const WorksheetGenerator: React.FC = () => {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   const chatGptPrompt =
-    'Jadilah Ahli dalam membuat Jawaban dan soal TTS mata pelajaran ...  kelas.... Buatkan soal dan jawaban untuk dijadikan teka teki silang dengan jawaban hanya berupa satu kata atau istilah penting untuk materi....... Dengan format JAWABAN[spasi]PETUNJUK atau SOAL, satu soal per baris.';
+    'Jadilah Ahli dalam membuat Jawaban dan soal TTS mata pelajaran ... kelas.... Buatkan soal dan jawaban untuk dijadikan teka teki silang dengan jawaban hanya berupa satu kata atau istilah penting untuk materi ....... Dengan format JAWABAN[spasi]PETUNJUK atau SOAL, satu soal per baris. sebanyak 10 butir, tanpa nomor dan mudah di copy.';
 
   const handleCopyPrompt = async () => {
     try {
@@ -136,15 +136,12 @@ export const WorksheetGenerator: React.FC = () => {
             className="w-full font-mono text-xs md:text-sm p-3.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none leading-relaxed shadow-2xs whitespace-pre overflow-x-auto overflow-y-hidden resize-y transition-[height] duration-75"
             style={{ minHeight: '180px' }}
           />
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-[11px] text-neutral-500 mt-1 gap-1">
-            <span>Format: <code>JAWABAN Petunjuk pertanyaan</code> (pisahkan dengan spasi, 1 baris per kata)</span>
-            {layout.unplacedWords.length > 0 && (
-              <span className="text-amber-600 font-medium flex items-center gap-1">
-                <AlertCircle className="w-3.5 h-3.5" />
-                {layout.unplacedWords.length} kata belum bersilangan (coba ganti variasi di bawah)
-              </span>
-            )}
-          </div>
+          {layout.unplacedWords.length > 0 && (
+            <div className="flex items-center gap-1 text-[11px] text-amber-600 font-medium mt-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>{layout.unplacedWords.length} kata belum bersilangan (coba ganti variasi di bawah)</span>
+            </div>
+          )}
 
           {/* Petunjuk Pembuatan Jawaban & Soal TTS Menggunakan ChatGPT */}
           <div className="mt-3 p-3.5 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700/80 rounded-xl text-xs space-y-2">
