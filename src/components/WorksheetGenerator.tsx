@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import {
   Printer,
   ChevronLeft,
@@ -10,6 +11,7 @@ import {
   AlertCircle,
   Copy,
   Sparkles,
+  FileDown,
 } from 'lucide-react';
 import { generateCrossword, parseRawInput } from '../utils/crosswordGenerator';
 import { CrosswordLayout } from '../types';
@@ -21,6 +23,8 @@ export const WorksheetGenerator: React.FC = () => {
   const [showAnswerKey, setShowAnswerKey] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfSuccess, setPdfSuccess] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   const chatGptPrompt =
@@ -160,44 +164,117 @@ export const WorksheetGenerator: React.FC = () => {
   const acrossWords = layout.placedWords.filter((w) => w.direction === 'across');
   const downWords = layout.placedWords.filter((w) => w.direction === 'down');
 
-  // Print function
-  const handlePrint = () => {
-    window.print();
+  // Capture worksheet as crisp high-resolution canvas
+  const captureWorksheetCanvas = async (): Promise<HTMLCanvasElement | null> => {
+    if (!worksheetRef.current) return null;
+    setIsExportingUnscaled(true);
+    // Allow DOM to apply unscaled 1:1 view for crisp capture
+    await new Promise((resolve) => setTimeout(resolve, 90));
+
+    try {
+      const canvas = await html2canvas(worksheetRef.current, {
+        scale: 2, // 2x high resolution
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        width: 794,
+        logging: false,
+      });
+      return canvas;
+    } finally {
+      setIsExportingUnscaled(false);
+    }
   };
 
-  // Export as PNG image using html2canvas
+  // Direct PDF export and file download using jsPDF
+  const handleExportPdf = async () => {
+    if (!worksheetRef.current) return;
+    try {
+      setIsExportingPdf(true);
+      const canvas = await captureWorksheetCanvas();
+      if (!canvas) throw new Error('Gagal menangkap kanvas');
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+        compress: true,
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth(); // 210mm
+      const pdfHeight = pdf.internal.pageSize.getHeight(); // 297mm
+
+      // Calculate height in mm keeping canvas aspect ratio
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      if (imgHeight <= pdfHeight) {
+        // Fits nicely on 1 single A4 sheet
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, imgHeight, undefined, 'FAST');
+      } else {
+        // Scale down slightly to guarantee 1 single page
+        const scaleFactor = pdfHeight / imgHeight;
+        const finalW = pdfWidth * scaleFactor;
+        const finalH = pdfHeight;
+        const marginX = (pdfWidth - finalW) / 2;
+        pdf.addImage(imgData, 'JPEG', marginX, 0, finalW, finalH, undefined, 'FAST');
+      }
+
+      const safeTitle = title.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'teka-teki-silang';
+      const fileName = `${safeTitle}${showAnswerKey ? '_kunci_jawaban' : ''}.pdf`;
+
+      pdf.save(fileName);
+
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 2500);
+    } catch (err) {
+      console.error('Failed to export PDF, using print dialog', err);
+      window.print();
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  // Direct PNG image export and file download using Blob URL
   const handleExportImage = async () => {
     if (!worksheetRef.current) return;
     try {
       setIsExporting(true);
-      // Temporarily render unscaled 1:1 view for crisp canvas capture
-      setIsExportingUnscaled(true);
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      const canvas = await captureWorksheetCanvas();
+      if (!canvas) throw new Error('Gagal menangkap kanvas');
 
-      const canvas = await html2canvas(worksheetRef.current, {
-        scale: 2, // High resolution for crisp printing
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        width: 794,
-      });
-
-      setIsExportingUnscaled(false);
-
-      const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
       const safeTitle = title.trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'teka-teki-silang';
-      link.download = `${safeTitle}${showAnswerKey ? '_kunci_jawaban' : ''}.png`;
-      link.href = dataUrl;
-      link.click();
+      const fileName = `${safeTitle}${showAnswerKey ? '_kunci_jawaban' : ''}.png`;
+
+      // Use Blob with URL.createObjectURL for 100% reliable download on mobile and desktop
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          const dataUrl = canvas.toDataURL('image/png');
+          const link = document.createElement('a');
+          link.download = fileName;
+          link.href = dataUrl;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          return;
+        }
+
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = blobUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+      }, 'image/png');
 
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 2500);
     } catch (err) {
       console.error('Failed to export image', err);
-      alert('Gagal mengekspor gambar. Silakan gunakan tombol Download PDF.');
+      alert('Gagal mendownload gambar. Silakan coba lagi.');
     } finally {
       setIsExporting(false);
-      setIsExportingUnscaled(false);
     }
   };
 
@@ -301,6 +378,15 @@ export const WorksheetGenerator: React.FC = () => {
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Susunan Pas 1 Lembar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              title="Cetak langsung menggunakan printer browser"
+              className="text-[11px] px-2 py-1 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs flex items-center gap-1"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Cetak</span>
             </button>
             {scale < 1 && (
               <button
@@ -533,11 +619,27 @@ export const WorksheetGenerator: React.FC = () => {
           {/* Tombol Download PDF */}
           <button
             type="button"
-            onClick={handlePrint}
-            className="h-11 px-3 bg-neutral-900 hover:bg-black text-white dark:bg-amber-500 dark:hover:bg-amber-600 dark:text-neutral-950 font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+            onClick={handleExportPdf}
+            disabled={isExportingPdf}
+            className="h-11 px-2.5 bg-neutral-900 hover:bg-black active:scale-[0.98] text-white dark:bg-neutral-100 dark:hover:bg-white dark:text-neutral-950 font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-60"
+            title="Download file lembar kerja dalam format PDF langsung ke perangkat Anda"
           >
-            <Printer className="w-4 h-4" />
-            <span>Download PDF</span>
+            {pdfSuccess ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-400 dark:text-emerald-600 stroke-[3]" />
+                <span>PDF Tersimpan!</span>
+              </>
+            ) : isExportingPdf ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                <span>Membuat PDF...</span>
+              </>
+            ) : (
+              <>
+                <FileDown className="w-4 h-4" />
+                <span>Download PDF</span>
+              </>
+            )}
           </button>
 
           {/* Tombol Download Gambar */}
@@ -545,12 +647,13 @@ export const WorksheetGenerator: React.FC = () => {
             type="button"
             onClick={handleExportImage}
             disabled={isExporting}
-            className="h-11 px-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+            className="h-11 px-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 active:scale-[0.98] text-neutral-950 font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-60"
+            title="Download file lembar kerja dalam format gambar PNG beresolusi tinggi"
           >
             {exportSuccess ? (
               <>
-                <Check className="w-4 h-4 text-neutral-950" />
-                <span>Tersimpan!</span>
+                <Check className="w-4 h-4 text-neutral-950 stroke-[3]" />
+                <span>Gambar Tersimpan!</span>
               </>
             ) : isExporting ? (
               <>
