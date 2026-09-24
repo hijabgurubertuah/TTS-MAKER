@@ -217,15 +217,8 @@ export const WorksheetGenerator: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [scale, setScale] = useState<number>(1);
-  const [isFitMode, setIsFitMode] = useState<boolean>(true);
-
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.max(textareaRef.current.scrollHeight + 4, 180)}px`;
-    }
-  }, [rawWords, rawWords2, activeEditorTab]);
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
 
   // Primary TTS generation
   const parsedItems1 = useMemo(() => parseRawInput(rawWords), [rawWords]);
@@ -379,7 +372,8 @@ export const WorksheetGenerator: React.FC = () => {
     };
   }, [layout1, layout2, title, title2, showAnswerKey, rawWords, rawWords2, printLayout, twoPerPageSource]);
 
-  const effectiveScale = isFitMode ? scale : 1;
+  // Always auto-fit smoothly to the container / mobile screen width
+  const effectiveScale = scale;
 
   const currentSeed = activeEditorTab === 'tts1' ? seed : seed2;
   const handleNextSeed = () => {
@@ -389,6 +383,35 @@ export const WorksheetGenerator: React.FC = () => {
   const handlePrevSeed = () => {
     if (activeEditorTab === 'tts1') setSeed((prev) => (prev > 1 ? prev - 1 : 9999));
     else setSeed2((prev) => (prev > 1 ? prev - 1 : 9999));
+  };
+
+  // Touch gesture swipe handlers (swipe left/right to change variations)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+    const diffX = touchEndX - touchStartX.current;
+    const diffY = touchEndY - touchStartY.current;
+
+    // Trigger only if horizontal swipe exceeds 40px and is predominantly horizontal
+    if (Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY) * 1.2) {
+      if (diffX > 0) {
+        // Swiped right -> previous variation
+        handlePrevSeed();
+      } else {
+        // Swiped left -> next variation
+        handleNextSeed();
+      }
+    }
+    touchStartX.current = null;
+    touchStartY.current = null;
   };
 
   // Helper to sanitize filename
@@ -572,6 +595,19 @@ export const WorksheetGenerator: React.FC = () => {
   const currentParsedItems = activeEditorTab === 'tts1' ? parsedItems1 : parsedItems2;
   const currentLayout = activeEditorTab === 'tts1' ? layout1 : layout2;
 
+  // Auto-resize textarea to dynamically fit content rows when typing or pressing Enter
+  const adjustTextareaHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      // scrollHeight + 4px ensures borders and last line descenders are never clipped
+      textareaRef.current.style.height = `${Math.max(textareaRef.current.scrollHeight + 4, 100)}px`;
+    }
+  };
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [currentRawWords, activeEditorTab]);
+
   return (
     <div className="space-y-6">
       {/* Toast Notification Banner */}
@@ -603,128 +639,49 @@ export const WorksheetGenerator: React.FC = () => {
         </div>
       )}
 
-      {/* Selector Layout Cetak (1 TTS vs 2 TTS Hemat Kertas) - Minimalis & Gambar Saja */}
-      <div className="print:hidden bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <LayoutGrid className="w-4 h-4 text-amber-500" />
-            <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-              Layout Cetak:
-            </span>
-          </div>
-
-          {/* Tombol-tombol Layout Cuma Gambar Saja Tanpa Keterangan */}
-          <div className="flex items-center gap-2">
-            {/* Opsi A: 1 TTS per Halaman (Gambar Miniatur A4) */}
-            <button
-              type="button"
-              onClick={() => handleSelectLayout('1_per_page')}
-              title="1 TTS per Halaman A4"
-              className={`p-1.5 rounded-xl border-2 transition cursor-pointer flex flex-col items-center justify-center ${
-                printLayout === '1_per_page'
-                  ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-2 ring-amber-500/20 shadow-xs scale-105'
-                  : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 text-neutral-400 hover:border-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 opacity-70 hover:opacity-100'
-              }`}
-            >
-              {/* Miniatur A4 1 TTS */}
-              <div className="w-7 h-9 rounded-xs border border-current p-0.5 flex flex-col justify-between bg-white dark:bg-neutral-950">
-                <div className="w-full h-4 border border-current/80 rounded-2xs bg-current/20 flex items-center justify-center">
-                  <div className="w-2.5 h-2.5 grid grid-cols-2 gap-0.5 opacity-60">
-                    <div className="bg-current rounded-2xs" />
-                    <div className="bg-current rounded-2xs" />
-                    <div className="bg-current rounded-2xs" />
-                    <div className="bg-current rounded-2xs" />
-                  </div>
-                </div>
-                <div className="w-full space-y-0.5">
-                  <div className="w-full h-0.5 bg-current/60 rounded" />
-                  <div className="w-2/3 h-0.5 bg-current/60 rounded" />
-                </div>
-              </div>
-            </button>
-
-            {/* Opsi B: 2 TTS per Halaman (Gambar Miniatur A4 2 Bagian) */}
-            <button
-              type="button"
-              onClick={() => handleSelectLayout('2_per_page')}
-              title="2 TTS per Halaman A4 (Hemat Kertas)"
-              className={`p-1.5 rounded-xl border-2 transition cursor-pointer flex flex-col items-center justify-center ${
-                printLayout === '2_per_page'
-                  ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-2 ring-amber-500/20 shadow-xs scale-105'
-                  : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 text-neutral-400 hover:border-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 opacity-70 hover:opacity-100'
-              }`}
-            >
-              {/* Miniatur A4 2 TTS Split */}
-              <div className="w-7 h-9 rounded-xs border border-current p-0.5 flex flex-col justify-between bg-white dark:bg-neutral-950">
-                <div className="w-full h-3 border border-current/80 rounded-2xs bg-current/20 flex items-center justify-between px-0.5">
-                  <div className="w-2 h-2 grid grid-cols-2 gap-px opacity-60">
-                    <div className="bg-current" />
-                    <div className="bg-current" />
-                    <div className="bg-current" />
-                    <div className="bg-current" />
-                  </div>
-                  <div className="w-2 space-y-px">
-                    <div className="w-full h-px bg-current" />
-                    <div className="w-full h-px bg-current" />
-                  </div>
-                </div>
-                <div className="w-full border-t border-dashed border-current my-px" />
-                <div className="w-full h-3 border border-current/80 rounded-2xs bg-current/20 flex items-center justify-between px-0.5">
-                  <div className="w-2 h-2 grid grid-cols-2 gap-px opacity-60">
-                    <div className="bg-current" />
-                    <div className="bg-current" />
-                    <div className="bg-current" />
-                    <div className="bg-current" />
-                  </div>
-                  <div className="w-2 space-y-px">
-                    <div className="w-full h-px bg-current" />
-                    <div className="w-full h-px bg-current" />
-                  </div>
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* Sub-options for 2-per-page: Salin Sama vs Dua TTS Berbeda */}
+      {/* Input Card: Judul dan Daftar Kata Jawaban (Hidden when printing) */}
+      <div className="print:hidden bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 md:p-6 shadow-sm space-y-4">
+        {/* Sub-options for 2-per-page if active: Salin Sama vs 2 TTS Berbeda */}
         {printLayout === '2_per_page' && (
-          <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-200 dark:border-neutral-700/80 flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
-            <div className="flex items-center gap-1.5">
+          <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-200 dark:border-neutral-700/80 space-y-2 animate-in fade-in">
+            {/* Row 1: Salin Sama vs 2 TTS Berbeda (Balanced Grid on Mobile & Desktop) */}
+            <div className="grid grid-cols-2 gap-2 w-full">
               <button
                 type="button"
                 onClick={() => setTwoPerPageSource('same')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-center ${
                   twoPerPageSource === 'same'
-                    ? 'bg-amber-500 text-neutral-950 shadow-2xs'
-                    : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+                    : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
                 }`}
               >
-                <CopyCheck className="w-3.5 h-3.5" />
-                <span>Salin Sama</span>
+                <CopyCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Salin Sama</span>
               </button>
               <button
                 type="button"
                 onClick={() => setTwoPerPageSource('different')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-center ${
                   twoPerPageSource === 'different'
-                    ? 'bg-amber-500 text-neutral-950 shadow-2xs'
-                    : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+                    : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
                 }`}
               >
-                <SplitSquareVertical className="w-3.5 h-3.5" />
-                <span>2 TTS Berbeda</span>
+                <SplitSquareVertical className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">2 TTS Berbeda</span>
               </button>
             </div>
 
+            {/* Row 2: TTS 1 (Atas) vs TTS 2 (Bawah) (Balanced Grid on Mobile & Desktop) */}
             {twoPerPageSource === 'different' && (
-              <div className="flex items-center gap-1">
+              <div className="grid grid-cols-2 gap-2 w-full pt-1.5 border-t border-neutral-200 dark:border-neutral-700/70">
                 <button
                   type="button"
                   onClick={() => setActiveEditorTab('tts1')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${
+                  className={`w-full py-2 px-3 rounded-lg text-xs font-bold cursor-pointer transition text-center ${
                     activeEditorTab === 'tts1'
-                      ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-2xs'
-                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+                      : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
                   }`}
                 >
                   TTS 1 (Atas)
@@ -732,10 +689,10 @@ export const WorksheetGenerator: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActiveEditorTab('tts2')}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${
+                  className={`w-full py-2 px-3 rounded-lg text-xs font-bold cursor-pointer transition text-center ${
                     activeEditorTab === 'tts2'
-                      ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-2xs'
-                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+                      : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
                   }`}
                 >
                   TTS 2 (Bawah)
@@ -744,17 +701,36 @@ export const WorksheetGenerator: React.FC = () => {
             )}
           </div>
         )}
-      </div>
 
-      {/* Input Card: Judul dan Daftar Kata Jawaban (Hidden when printing) */}
-      <div className="print:hidden bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 md:p-6 shadow-sm space-y-4">
-        {printLayout === '2_per_page' && twoPerPageSource === 'different' && (
-          <div className="flex items-center gap-2 pb-2 border-b border-neutral-200 dark:border-neutral-800">
-            <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-neutral-950 font-black text-xs">
-              {activeEditorTab === 'tts1' ? 'SEDANG MENGEDIT TTS 1 (SLOT ATAS)' : 'SEDANG MENGEDIT TTS 2 (SLOT BAWAH)'}
+        {/* Kolom Prompt ChatGPT di Paling Atas */}
+        <div className="p-3.5 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700/80 rounded-xl text-xs space-y-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span className="font-bold text-neutral-800 dark:text-neutral-200 flex items-start sm:items-center gap-1.5 leading-snug">
+              <span className="shrink-0">💡</span> Salin Prompt ini lalu tempel ke ChatGPT, Sesuaikan Materi dan Jumlah Soalnya.
             </span>
+            <button
+              type="button"
+              onClick={handleCopyPrompt}
+              title="Salin prompt untuk ChatGPT"
+              className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold rounded-lg transition text-xs cursor-pointer shadow-2xs w-full sm:w-auto"
+            >
+              {copiedPrompt ? (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Tersalin!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Salin Prompt</span>
+                </>
+              )}
+            </button>
           </div>
-        )}
+          <div className="p-2.5 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-700/70 text-neutral-700 dark:text-neutral-300 font-mono text-[11px] sm:text-xs leading-relaxed select-all break-words">
+            {chatGptPrompt}
+          </div>
+        </div>
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
@@ -817,135 +793,169 @@ export const WorksheetGenerator: React.FC = () => {
           <textarea
             ref={textareaRef}
             value={currentRawWords}
-            onChange={(e) => setCurrentRawWords(e.target.value)}
+            onChange={(e) => {
+              setCurrentRawWords(e.target.value);
+              adjustTextareaHeight();
+            }}
+            onInput={() => adjustTextareaHeight()}
+            onKeyDown={() => {
+              // trigger height check on enter or backspace
+              setTimeout(adjustTextareaHeight, 0);
+            }}
+            rows={4}
             wrap="off"
             placeholder="JAWABAN Petunjuk pertanyaan...&#10;JAWABAN2 Petunjuk pertanyaan kedua..."
-            className="w-full font-mono text-xs md:text-sm p-3.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none leading-relaxed shadow-2xs whitespace-pre overflow-x-auto overflow-y-hidden resize-y transition-[height] duration-75"
-            style={{ minHeight: '180px' }}
+            className="w-full font-mono text-xs md:text-sm p-3.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none leading-relaxed shadow-2xs whitespace-pre overflow-x-auto overflow-y-hidden resize-none"
+            style={{ minHeight: '100px' }}
           />
           {currentLayout.unplacedWords.length > 0 && (
             <div className="flex items-center gap-1 text-[11px] text-amber-600 font-medium mt-1">
               <AlertCircle className="w-3.5 h-3.5" />
-              <span>{currentLayout.unplacedWords.length} kata belum bersilangan (coba ganti variasi di bawah)</span>
+              <span>{currentLayout.unplacedWords.length} kata belum bersilangan (coba geser panah kiri/kanan)</span>
             </div>
           )}
-
-          {/* Petunjuk Pembuatan Jawaban & Soal TTS Menggunakan ChatGPT */}
-          <div className="mt-3 p-3.5 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700/80 rounded-xl text-xs space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                <span>💡</span> Petunjuk pembuatan jawaban dan soal TTS menggunakan ChatGPT:
-              </span>
-              <button
-                type="button"
-                onClick={handleCopyPrompt}
-                title="Salin prompt untuk ChatGPT"
-                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold rounded-lg transition text-xs cursor-pointer shadow-2xs"
-              >
-                {copiedPrompt ? (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Tersalin!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Salin Prompt</span>
-                  </>
-                )}
-              </button>
-            </div>
-            <div className="p-2.5 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-700/70 text-neutral-700 dark:text-neutral-300 font-mono text-[11px] sm:text-xs leading-relaxed select-all">
-              {chatGptPrompt}
-            </div>
-          </div>
         </div>
       </div>
 
       {/* Pratinjau Lembar Kerja (Worksheet) - Responsive WYSIWYG Container */}
       <div className="w-full flex flex-col items-center">
-        {/* Mobile WYSIWYG Header Bar */}
-        <div className="print:hidden w-full max-w-[794px] flex flex-wrap items-center justify-between gap-2 px-2 mb-3 text-xs text-neutral-500 dark:text-neutral-400">
-          <div className="flex items-center gap-2">
+        {/* WYSIWYG Header Bar */}
+        <div className="print:hidden w-full max-w-[794px] flex flex-wrap items-center justify-between gap-2.5 px-2 mb-3 text-xs text-neutral-500 dark:text-neutral-400">
+          <div className="flex items-center flex-wrap gap-2">
             <span className="font-bold text-neutral-900 dark:text-white text-sm">
               Pratinjau
             </span>
-            <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-              ✓ {printLayout === '2_per_page' ? '2 TTS / 1 Lembar A4' : '1 TTS / 1 Lembar A4'}
-            </span>
-            {scale < 1 && (
-              <span className="text-[10px] font-mono bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 px-2 py-0.5 rounded-full font-medium">
-                {Math.round(effectiveScale * 100)}%
-              </span>
-            )}
+
+            {/* Tombol Pilih Layout (Miniatur Gambar Pas di Deretan Tulisan Pratinjau) */}
+            <div className="flex items-center gap-1.5 ml-1">
+              {/* Opsi 1 TTS per Halaman */}
+              <button
+                type="button"
+                onClick={() => handleSelectLayout('1_per_page')}
+                title="1 TTS per Halaman A4"
+                className={`p-1 rounded-lg border-2 transition cursor-pointer flex flex-col items-center justify-center ${
+                  printLayout === '1_per_page'
+                    ? 'border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/30 scale-105'
+                    : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-400 hover:border-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 opacity-75 hover:opacity-100'
+                }`}
+              >
+                <div className="w-5 h-6.5 rounded-2xs border border-current p-0.5 flex flex-col justify-between bg-white dark:bg-neutral-950">
+                  <div className="w-full h-2.5 border border-current/80 rounded-2xs bg-current/20 flex items-center justify-center">
+                    <div className="w-1.5 h-1.5 grid grid-cols-2 gap-px opacity-60">
+                      <div className="bg-current" />
+                      <div className="bg-current" />
+                      <div className="bg-current" />
+                      <div className="bg-current" />
+                    </div>
+                  </div>
+                  <div className="w-full space-y-0.5">
+                    <div className="w-full h-0.5 bg-current/60 rounded-2xs" />
+                  </div>
+                </div>
+              </button>
+
+              {/* Opsi 2 TTS per Halaman */}
+              <button
+                type="button"
+                onClick={() => handleSelectLayout('2_per_page')}
+                title="2 TTS per Halaman A4 (Hemat Kertas)"
+                className={`p-1 rounded-lg border-2 transition cursor-pointer flex flex-col items-center justify-center ${
+                  printLayout === '2_per_page'
+                    ? 'border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/30 scale-105'
+                    : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-400 hover:border-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 opacity-75 hover:opacity-100'
+                }`}
+              >
+                <div className="w-5 h-6.5 rounded-2xs border border-current p-0.5 flex flex-col justify-between bg-white dark:bg-neutral-950">
+                  <div className="w-full h-2 border border-current/80 rounded-2xs bg-current/20 flex items-center justify-between px-0.5">
+                    <div className="w-1 h-1 bg-current opacity-70" />
+                    <div className="w-1 h-0.5 bg-current opacity-70" />
+                  </div>
+                  <div className="w-full border-t border-dashed border-current my-px" />
+                  <div className="w-full h-2 border border-current/80 rounded-2xs bg-current/20 flex items-center justify-between px-0.5">
+                    <div className="w-1 h-1 bg-current opacity-70" />
+                    <div className="w-1 h-0.5 bg-current opacity-70" />
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            {/* Tombol Otomatis Pas di samping Tombol Layout */}
+            <button
+              type="button"
+              onClick={handleAutoFit}
+              title="Otomatis pilih susunan yang pas untuk 1 lembar kertas"
+              className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold transition cursor-pointer shadow-2xs flex items-center gap-1 ml-0.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Otomatis Pas</span>
+            </button>
           </div>
 
-          {/* Mode Switcher: Lembar Soal vs Kunci Jawaban */}
-          <div className="flex items-center gap-1.5 p-1 bg-neutral-200/70 dark:bg-neutral-800/80 rounded-xl border border-neutral-300 dark:border-neutral-700">
+          {/* Tab Lembar Soal dan Ceklis Kunci */}
+          <div className="flex items-center flex-wrap gap-1.5">
+            {/* Tab Lembar Soal */}
             <button
               type="button"
               onClick={() => setShowAnswerKey(false)}
-              className={`px-3 py-1 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${
                 !showAnswerKey
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                  ? 'bg-amber-500 text-neutral-950 shadow-2xs'
+                  : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
               <span>Lembar Soal</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setShowAnswerKey(true)}
-              className={`px-3 py-1 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${
-                showAnswerKey
-                  ? 'bg-amber-500 text-neutral-950 shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <KeyRound className="w-3.5 h-3.5" />
-              <span>Kunci Jawaban</span>
-            </button>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleAutoFit}
-              title="Pilih susunan paling ringkas dan pas untuk 1 lembar kertas"
-              className="text-[11px] px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold transition cursor-pointer shadow-2xs flex items-center gap-1"
+            {/* Ceklis Kunci */}
+            <label
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer select-none border ${
+                showAnswerKey
+                  ? 'bg-amber-500/15 border-amber-500 text-amber-700 dark:text-amber-300 shadow-2xs'
+                  : 'bg-neutral-100 dark:bg-neutral-800/80 border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+              }`}
+              title="Ceklis untuk melihat kunci jawaban"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Susunan Pas 1 Lembar</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              title="Cetak langsung atau Simpan sebagai PDF via printer peramban"
-              className="text-[11px] px-2.5 py-1.5 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs flex items-center gap-1"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Cetak</span>
-            </button>
-            {scale < 1 && (
-              <button
-                type="button"
-                onClick={() => setIsFitMode(!isFitMode)}
-                className="text-[11px] px-2.5 py-1.5 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs"
-              >
-                {isFitMode ? '🔍 100%' : '📱 Fit HP'}
-              </button>
-            )}
+              <input
+                type="checkbox"
+                checked={showAnswerKey}
+                onChange={(e) => setShowAnswerKey(e.target.checked)}
+                className="w-3.5 h-3.5 accent-amber-500 rounded cursor-pointer"
+              />
+              <span>Kunci</span>
+            </label>
           </div>
         </div>
 
-        {/* Viewport Box for Interactive Screen Display */}
+        {/* Viewport Box for Interactive Screen Display with Blue Navigation Arrows & Swipe */}
         <div
           ref={containerRef}
-          className={`w-full flex justify-center ${
-            !isFitMode && effectiveScale === 1 ? 'overflow-x-auto pb-4' : 'overflow-hidden'
-          }`}
+          className="relative w-full flex justify-center items-center overflow-hidden select-none"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         >
+          {/* Tombol Variasi Kiri (Panah Biru Latar Transparan) */}
+          <button
+            type="button"
+            onClick={handlePrevSeed}
+            title="Susunan sebelumnya (bisa swipe layar ke kanan)"
+            aria-label="Sebelumnya"
+            className="absolute left-0 sm:left-2 top-1/2 -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
+          >
+            <ChevronLeft className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
+          </button>
+
+          {/* Tombol Variasi Kanan (Panah Biru Latar Transparan) */}
+          <button
+            type="button"
+            onClick={handleNextSeed}
+            title="Susunan berikutnya (bisa swipe layar ke kiri)"
+            aria-label="Berikutnya"
+            className="absolute right-0 sm:right-2 top-1/2 -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
+          >
+            <ChevronRight className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
+          </button>
+
           <div
             style={
               effectiveScale < 1
@@ -958,7 +968,7 @@ export const WorksheetGenerator: React.FC = () => {
                     height: '1123px',
                   }
             }
-            className="relative shrink-0 transition-all duration-150 print:!w-full print:!h-auto"
+            className="relative shrink-0 transition-all duration-150 print:!w-full print:!h-auto shadow-md rounded-lg overflow-hidden"
           >
             <div
               style={
@@ -1059,40 +1069,9 @@ export const WorksheetGenerator: React.FC = () => {
         </div>
       </div>
 
-      {/* Action Bar: Navigasi Variasi & Tombol Ekspor Utama */}
-      <div className="print:hidden w-full max-w-[794px] mx-auto bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-3.5 sm:p-4 rounded-2xl shadow-md space-y-3">
-        {/* Row 1: Variasi Layout Switcher */}
-        <div className="flex items-center justify-between gap-2 border-b border-neutral-200 dark:border-neutral-800 pb-3">
-          <button
-            type="button"
-            onClick={handlePrevSeed}
-            title="Susunan Layout Sebelumnya"
-            className="h-10 px-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100 font-bold rounded-xl transition flex items-center justify-center gap-1 text-xs cursor-pointer"
-          >
-            <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
-            <span className="hidden sm:inline">Sebelumnya</span>
-          </button>
-
-          <div className="h-10 px-4 bg-neutral-50 dark:bg-neutral-800/80 rounded-xl border border-neutral-300 dark:border-neutral-700 shadow-2xs flex items-center justify-center text-center">
-            <span className="text-xs font-bold font-mono text-neutral-900 dark:text-white">
-              {printLayout === '2_per_page' && twoPerPageSource === 'different'
-                ? `${activeEditorTab === 'tts1' ? 'TTS 1' : 'TTS 2'} - Variasi ${currentSeed}`
-                : `Variasi ${currentSeed}`}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleNextSeed}
-            title="Susunan Layout Berikutnya"
-            className="h-10 px-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-900 dark:text-neutral-100 font-bold rounded-xl transition flex items-center justify-center gap-1 text-xs cursor-pointer"
-          >
-            <span className="hidden sm:inline">Berikutnya</span>
-            <ChevronRight className="w-4 h-4 stroke-[2.5]" />
-          </button>
-        </div>
-
-        {/* Row 2: Export Action Buttons */}
+      {/* Action Bar: Tombol Ekspor Utama */}
+      <div className="print:hidden w-full max-w-[794px] mx-auto bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-3.5 sm:p-4 rounded-2xl shadow-md">
+        {/* Export Action Buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {/* Tombol Ekspor PDF */}
           <div className="flex rounded-xl overflow-hidden shadow-xs border border-neutral-300 dark:border-neutral-700">
