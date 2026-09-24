@@ -354,3 +354,54 @@ export function generateCrossword(items: WordClue[], seed: number = 1): Crosswor
     seed,
   };
 }
+
+/**
+ * Searches across multiple seeds (1 to 60) to find the most compact, best-interlocking crossword layout.
+ * Specifically tuned to optimize empty space utilization for 1_per_page and 2_per_page layouts.
+ */
+export function findOptimalSeedForLayout(
+  items: WordClue[],
+  layoutType: '1_per_page' | '2_per_page',
+  currentSeed: number = 1
+): number {
+  if (items.length === 0) return 42;
+  let bestSeed = currentSeed;
+  let bestScore = -Infinity;
+
+  for (let s = 1; s <= 60; s++) {
+    const res = generateCrossword(items, s);
+    const unplaced = res.unplacedWords.length;
+    const w = res.width || 1;
+    const h = res.height || 1;
+    const area = w * h;
+
+    if (layoutType === '2_per_page') {
+      // 2 per page (half A4 slot):
+      // 1. Zero unplaced words is top priority
+      // 2. Tighter compact area
+      // 3. Aspect ratio between 1.0 and 1.25 fits side-by-side slot perfectly
+      const ratio = w / h;
+      const ratioPenalty = Math.abs(ratio - 1.15) * 35;
+      const dimPenalty = (w > 18 ? (w - 18) * 80 : 0) + (h > 15 ? (h - 15) * 80 : 0);
+      const score = 10000 - unplaced * 2500 - area * 2 - ratioPenalty - dimPenalty;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestSeed = s;
+      }
+    } else {
+      // 1 per page:
+      const ratio = w / h;
+      const ratioPenalty = Math.abs(ratio - 1.0) * 25;
+      const score = 10000 - unplaced * 2500 - area - ratioPenalty;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestSeed = s;
+      }
+    }
+  }
+
+  return bestSeed;
+}
+

@@ -22,7 +22,7 @@ import {
   CopyCheck,
   SplitSquareVertical,
 } from 'lucide-react';
-import { generateCrossword, parseRawInput } from '../utils/crosswordGenerator';
+import { generateCrossword, parseRawInput, findOptimalSeedForLayout } from '../utils/crosswordGenerator';
 import { CrosswordLayout } from '../types';
 import { WorksheetPaper } from './WorksheetPaper';
 import { WorksheetPaper2PerPage } from './WorksheetPaper2PerPage';
@@ -220,15 +220,21 @@ export const WorksheetGenerator: React.FC = () => {
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
 
-  // Primary TTS generation
+  // Primary TTS generation (used for TTS 1 / Top Slot)
   const parsedItems1 = useMemo(() => parseRawInput(rawWords), [rawWords]);
   const layout1: CrosswordLayout = useMemo(() => generateCrossword(parsedItems1, seed), [parsedItems1, seed]);
   const acrossWords1 = layout1.placedWords.filter((w) => w.direction === 'across');
   const downWords1 = layout1.placedWords.filter((w) => w.direction === 'down');
 
-  // Secondary TTS generation (used when printLayout === '2_per_page' and twoPerPageSource === 'different')
-  const parsedItems2 = useMemo(() => parseRawInput(rawWords2 || rawWords), [rawWords2, rawWords]);
-  const layout2: CrosswordLayout = useMemo(() => generateCrossword(parsedItems2, seed2), [parsedItems2, seed2]);
+  // Secondary TTS generation (used for TTS 2 / Bottom Slot)
+  // When 'same': uses parsedItems1 (same questions) with its own variation (seed2)
+  // When 'different': uses parsedItems2 with seed2
+  const parsedItems2 = useMemo(() => parseRawInput(rawWords2), [rawWords2]);
+  const bottomItems = useMemo(
+    () => (twoPerPageSource === 'same' ? parsedItems1 : parsedItems2),
+    [twoPerPageSource, parsedItems1, parsedItems2]
+  );
+  const layout2: CrosswordLayout = useMemo(() => generateCrossword(bottomItems, seed2), [bottomItems, seed2]);
   const acrossWords2 = layout2.placedWords.filter((w) => w.direction === 'across');
   const downWords2 = layout2.placedWords.filter((w) => w.direction === 'down');
 
@@ -241,16 +247,13 @@ export const WorksheetGenerator: React.FC = () => {
   }), [title, layout1, acrossWords1, downWords1]);
 
   const bottomTTS = useMemo(() => {
-    if (twoPerPageSource === 'same') {
-      return topTTS;
-    }
     return {
-      title: title2 || title || 'Teka-Teki Silang (B)',
+      title: (twoPerPageSource === 'different' ? title2 : title) || title || 'Teka-Teki Silang',
       layout: layout2,
       acrossWords: acrossWords2,
       downWords: downWords2,
     };
-  }, [twoPerPageSource, topTTS, title2, title, layout2, acrossWords2, downWords2]);
+  }, [twoPerPageSource, title2, title, layout2, acrossWords2, downWords2]);
 
   // Dynamic cell size for 1 TTS per page
   const cellSize1PerPage = useMemo(() => {
@@ -263,82 +266,51 @@ export const WorksheetGenerator: React.FC = () => {
     return Math.min(26, Math.max(16, calculated));
   }, [layout1.width, layout1.height]);
 
-  // Capacity validation check for 2-per-page layout (Half-page slot)
-  const isLayoutTooLargeFor2PerPage = (l: CrosswordLayout, across: typeof acrossWords1, down: typeof downWords1) => {
-    const totalWords = across.length + down.length;
-    // Maximum grid dimensions and question count that fit comfortably in ~495px height
-    return (l.width > 16 || l.height > 14 || totalWords > 16);
-  };
-
-  // Check whenever layout changes
-  const checkAndValidate2PerPage = () => {
-    if (printLayout === '2_per_page') {
-      const topTooLarge = isLayoutTooLargeFor2PerPage(layout1, acrossWords1, downWords1);
-      const bottomTooLarge = twoPerPageSource === 'different' && isLayoutTooLargeFor2PerPage(layout2, acrossWords2, downWords2);
-
-      if (topTooLarge || bottomTooLarge) {
-        setPrintLayout('1_per_page');
-        setToast({
-          type: 'warning',
-          message: 'Grid terlalu besar untuk 2 per halaman (Maks. 16x14 kotak & 16 soal). Otomatis kembali ke layout 1 per halaman.',
-        });
-      }
-    }
-  };
-
   const handleSelectLayout = (layoutMode: '1_per_page' | '2_per_page') => {
-    if (layoutMode === '2_per_page') {
-      const topTooLarge = isLayoutTooLargeFor2PerPage(layout1, acrossWords1, downWords1);
-      const bottomTooLarge = twoPerPageSource === 'different' && isLayoutTooLargeFor2PerPage(layout2, acrossWords2, downWords2);
-
-      if (topTooLarge || bottomTooLarge) {
-        setToast({
-          type: 'warning',
-          message: 'Grid terlalu besar untuk 2 per halaman (Maks. 16x14 kotak & 16 soal). Silakan kurangi kata atau gunakan 1 TTS per halaman.',
-        });
-        return;
-      }
-    }
     setPrintLayout(layoutMode);
-  };
-
-  useEffect(() => {
-    checkAndValidate2PerPage();
-  }, [layout1, layout2, acrossWords1.length, downWords1.length, acrossWords2.length, downWords2.length]);
-
-  // Find optimal seed
-  const findOptimalSeed = (items: ReturnType<typeof parseRawInput>, currentSeed: number) => {
-    if (items.length === 0) return 42;
-    let bestS = currentSeed;
-    let minUnplaced = Infinity;
-    let minArea = Infinity;
-
-    for (let s = 1; s <= 40; s++) {
-      const res = generateCrossword(items, s);
-      const unplaced = res.unplacedWords.length;
-      const area = (res.width || 50) * (res.height || 50);
-
-      if (unplaced < minUnplaced) {
-        minUnplaced = unplaced;
-        minArea = area;
-        bestS = s;
-      } else if (unplaced === minUnplaced && area < minArea) {
-        minArea = area;
-        bestS = s;
-      }
+    try {
+      localStorage.setItem('tts_print_layout', layoutMode);
+    } catch {
+      // ignore
     }
-    return bestS;
+
+    if (layoutMode === '2_per_page') {
+      // Force and automatically optimize the seed to utilize empty space for 2-per-page
+      if (parsedItems1.length > 0) {
+        const optimal1 = findOptimalSeedForLayout(parsedItems1, '2_per_page', seed);
+        setSeed(optimal1);
+      }
+      if (twoPerPageSource === 'different' && parsedItems2.length > 0) {
+        const optimal2 = findOptimalSeedForLayout(parsedItems2, '2_per_page', seed2);
+        setSeed2(optimal2);
+      }
+      setToast({
+        type: 'success',
+        message: 'Layout 2 TTS per Halaman diaktifkan & disesuaikan otomatis agar pas di ruang kertas.',
+      });
+    } else {
+      setToast({
+        type: 'success',
+        message: 'Layout 1 TTS per Halaman diaktifkan.',
+      });
+    }
   };
 
   const handleAutoFit = () => {
     if (activeEditorTab === 'tts1' || printLayout === '1_per_page') {
-      const optimal = findOptimalSeed(parsedItems1, seed);
+      const optimal = findOptimalSeedForLayout(parsedItems1, printLayout, seed);
       setSeed(optimal);
-      setToast({ type: 'success', message: `Susunan TTS 1 dioptimalkan ke Variasi ${optimal} (Pas 1 Lembar).` });
+      setToast({
+        type: 'success',
+        message: `Susunan TTS 1 dioptimalkan ke susunan terbaik (${printLayout === '2_per_page' ? 'Pas 2 TTS / Lembar' : 'Pas 1 Lembar'}).`,
+      });
     } else {
-      const optimal = findOptimalSeed(parsedItems2, seed2);
+      const optimal = findOptimalSeedForLayout(parsedItems2, printLayout, seed2);
       setSeed2(optimal);
-      setToast({ type: 'success', message: `Susunan TTS 2 dioptimalkan ke Variasi ${optimal} (Pas 1 Lembar).` });
+      setToast({
+        type: 'success',
+        message: `Susunan TTS 2 dioptimalkan ke susunan terbaik (${printLayout === '2_per_page' ? 'Pas 2 TTS / Lembar' : 'Pas 1 Lembar'}).`,
+      });
     }
   };
 
@@ -402,12 +374,25 @@ export const WorksheetGenerator: React.FC = () => {
 
     // Trigger only if horizontal swipe exceeds 40px and is predominantly horizontal
     if (Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY) * 1.2) {
-      if (diffX > 0) {
-        // Swiped right -> previous variation
-        handlePrevSeed();
+      if (printLayout === '2_per_page') {
+        const containerRect = containerRef.current?.getBoundingClientRect();
+        const isTopHalf = containerRect
+          ? touchStartY.current < containerRect.top + containerRect.height / 2
+          : true;
+
+        if (isTopHalf) {
+          if (diffX > 0) setSeed((prev) => (prev > 1 ? prev - 1 : 9999));
+          else setSeed((prev) => prev + 1);
+        } else {
+          if (diffX > 0) setSeed2((prev) => (prev > 1 ? prev - 1 : 9999));
+          else setSeed2((prev) => prev + 1);
+        }
       } else {
-        // Swiped left -> next variation
-        handleNextSeed();
+        if (diffX > 0) {
+          handlePrevSeed();
+        } else {
+          handleNextSeed();
+        }
       }
     }
     touchStartX.current = null;
@@ -598,9 +583,18 @@ export const WorksheetGenerator: React.FC = () => {
   // Auto-resize textarea to dynamically fit content rows when typing or pressing Enter
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      // scrollHeight + 4px ensures borders and last line descenders are never clipped
-      textareaRef.current.style.height = `${Math.max(textareaRef.current.scrollHeight + 4, 100)}px`;
+      const el = textareaRef.current;
+      el.style.height = 'auto';
+      
+      const lineCount = Math.max(1, (currentRawWords || '').split('\n').length);
+      // text-sm (14px) with leading-relaxed (~1.625) is ~23px per line + 28px padding + 2px border
+      const lineBasedHeight = lineCount * 24 + 32;
+      const hasHorizontalScrollbar = el.scrollWidth > el.clientWidth;
+      const scrollbarBuffer = hasHorizontalScrollbar ? 20 : 8;
+      
+      const computedHeight = Math.max(el.scrollHeight + scrollbarBuffer, lineBasedHeight, 110);
+      el.style.height = `${computedHeight}px`;
+      el.scrollTop = 0;
     }
   };
 
@@ -735,7 +729,7 @@ export const WorksheetGenerator: React.FC = () => {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="block text-sm font-bold text-neutral-800 dark:text-neutral-200">
-              Judul {printLayout === '2_per_page' && twoPerPageSource === 'different' ? (activeEditorTab === 'tts1' ? '(Slot Atas)' : '(Slot Bawah)') : ''}
+              Judul
             </label>
             {(currentTitle || currentRawWords) && (
               <div>
@@ -784,7 +778,7 @@ export const WorksheetGenerator: React.FC = () => {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="block text-sm font-bold text-neutral-800 dark:text-neutral-200">
-              JAWABAN &lt;spasi&gt; Soal {printLayout === '2_per_page' && twoPerPageSource === 'different' ? (activeEditorTab === 'tts1' ? '(Slot Atas)' : '(Slot Bawah)') : ''}
+              JAWABAN &lt;spasi&gt; SOAL
             </label>
             <span className="text-xs text-neutral-500 font-mono">
               {currentParsedItems.length} Kata terdeteksi
@@ -798,10 +792,13 @@ export const WorksheetGenerator: React.FC = () => {
               adjustTextareaHeight();
             }}
             onInput={() => adjustTextareaHeight()}
+            onPaste={() => setTimeout(adjustTextareaHeight, 10)}
+            onCut={() => setTimeout(adjustTextareaHeight, 10)}
+            onKeyUp={() => adjustTextareaHeight()}
             onKeyDown={() => {
-              // trigger height check on enter or backspace
               setTimeout(adjustTextareaHeight, 0);
             }}
+            onFocus={() => adjustTextareaHeight()}
             rows={4}
             wrap="off"
             placeholder="JAWABAN Petunjuk pertanyaan...&#10;JAWABAN2 Petunjuk pertanyaan kedua..."
@@ -934,27 +931,81 @@ export const WorksheetGenerator: React.FC = () => {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          {/* Tombol Variasi Kiri (Panah Biru Latar Transparan) */}
-          <button
-            type="button"
-            onClick={handlePrevSeed}
-            title="Susunan sebelumnya (bisa swipe layar ke kanan)"
-            aria-label="Sebelumnya"
-            className="absolute left-0 sm:left-2 top-1/2 -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
-          >
-            <ChevronLeft className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
-          </button>
+          {/* Tombol Panah Navigasi Variasi (Biru Transparan) */}
+          {printLayout === '2_per_page' ? (
+            <>
+              {/* === SLOT ATAS (TTS 1) === */}
+              {/* Panah Kiri TTS Atas */}
+              <button
+                type="button"
+                onClick={() => setSeed((prev) => (prev > 1 ? prev - 1 : 9999))}
+                title="TTS Atas: Susunan sebelumnya (bisa swipe layar atas ke kanan)"
+                aria-label="TTS Atas Sebelumnya"
+                className="absolute left-0 sm:left-2 top-[25%] -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
+              >
+                <ChevronLeft className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
+              </button>
 
-          {/* Tombol Variasi Kanan (Panah Biru Latar Transparan) */}
-          <button
-            type="button"
-            onClick={handleNextSeed}
-            title="Susunan berikutnya (bisa swipe layar ke kiri)"
-            aria-label="Berikutnya"
-            className="absolute right-0 sm:right-2 top-1/2 -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
-          >
-            <ChevronRight className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
-          </button>
+              {/* Panah Kanan TTS Atas */}
+              <button
+                type="button"
+                onClick={() => setSeed((prev) => prev + 1)}
+                title="TTS Atas: Susunan berikutnya (bisa swipe layar atas ke kiri)"
+                aria-label="TTS Atas Berikutnya"
+                className="absolute right-0 sm:right-2 top-[25%] -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
+              >
+                <ChevronRight className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
+              </button>
+
+              {/* === SLOT BAWAH (TTS 2) === */}
+              {/* Panah Kiri TTS Bawah */}
+              <button
+                type="button"
+                onClick={() => setSeed2((prev) => (prev > 1 ? prev - 1 : 9999))}
+                title="TTS Bawah: Susunan sebelumnya (bisa swipe layar bawah ke kanan)"
+                aria-label="TTS Bawah Sebelumnya"
+                className="absolute left-0 sm:left-2 top-[75%] -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
+              >
+                <ChevronLeft className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
+              </button>
+
+              {/* Panah Kanan TTS Bawah */}
+              <button
+                type="button"
+                onClick={() => setSeed2((prev) => prev + 1)}
+                title="TTS Bawah: Susunan berikutnya (bisa swipe layar bawah ke kiri)"
+                aria-label="TTS Bawah Berikutnya"
+                className="absolute right-0 sm:right-2 top-[75%] -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
+              >
+                <ChevronRight className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
+              </button>
+            </>
+          ) : (
+            <>
+              {/* === 1 TTS PER HALAMAN === */}
+              {/* Tombol Variasi Kiri (Panah Biru Latar Transparan) */}
+              <button
+                type="button"
+                onClick={handlePrevSeed}
+                title="Susunan sebelumnya (bisa swipe layar ke kanan)"
+                aria-label="Sebelumnya"
+                className="absolute left-0 sm:left-2 top-1/2 -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
+              >
+                <ChevronLeft className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
+              </button>
+
+              {/* Tombol Variasi Kanan (Panah Biru Latar Transparan) */}
+              <button
+                type="button"
+                onClick={handleNextSeed}
+                title="Susunan berikutnya (bisa swipe layar ke kiri)"
+                aria-label="Berikutnya"
+                className="absolute right-0 sm:right-2 top-1/2 -translate-y-1/2 z-30 p-2 sm:p-3 text-blue-500 hover:text-blue-600 active:text-blue-700 hover:bg-blue-500/10 active:scale-95 bg-transparent rounded-full transition cursor-pointer focus:outline-none"
+              >
+                <ChevronRight className="w-8 h-8 sm:w-11 sm:h-11 stroke-[3] drop-shadow-md" />
+              </button>
+            </>
+          )}
 
           <div
             style={

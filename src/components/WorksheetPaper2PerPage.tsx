@@ -27,22 +27,35 @@ const SingleSlot: React.FC<{
   const displayTitle = title.trim() || 'TEKA-TEKI SILANG';
 
   // Dynamic cell size for half-page slot:
-  // Left column width is ~370px, available height is ~340px
-  const maxW = 370;
-  const maxH = 340;
+  // Maximizes usage of available ~390px width and ~390px height
+  const maxW = 390;
+  const maxH = 390;
   const gridW = layout.width || 1;
   const gridH = layout.height || 1;
   const calcW = Math.floor(maxW / gridW);
   const calcH = Math.floor(maxH / gridH);
-  const cellSize = Math.min(24, Math.max(14, Math.min(calcW, calcH)));
+  const cellSize = Math.min(26, Math.max(9, Math.min(calcW, calcH)));
+
+  // Density calculation to dynamically adapt font size and spacing to fit all words
+  const totalWords = acrossWords.length + downWords.length;
+  const isCompact = totalWords > 10;
+  const isUltraCompact = totalWords > 16;
+
+  const clueTextClass = isUltraCompact
+    ? 'text-[8.5px] leading-[1.2]'
+    : isCompact
+    ? 'text-[9.5px] leading-[1.25]'
+    : 'text-[10.5px] leading-tight';
+
+  const clueGapClass = isUltraCompact ? 'space-y-0.5' : isCompact ? 'space-y-0.5' : 'space-y-1';
 
   return (
     <div
       className="flex flex-col justify-between h-[495px] overflow-hidden"
       style={{ boxSizing: 'border-box' }}
     >
-      {/* Slot Header: Judul & Nilai & Identitas */}
-      <div className="border-b-2 border-black pb-1.5">
+      {/* Slot Header: Judul & Kotak Nilai & Identitas */}
+      <div className="border-b-2 border-black pb-1.5 shrink-0">
         <div className="flex justify-between items-start">
           <div className="flex-1 pr-3">
             <div className="flex items-center gap-2">
@@ -61,10 +74,8 @@ const SingleSlot: React.FC<{
               )}
             </div>
           </div>
-          {/* Kotak Nilai */}
-          <div className="border-2 border-black rounded w-[56px] h-[34px] shrink-0 flex items-center justify-center bg-white">
-            <span className="text-[8px] font-bold text-neutral-500 uppercase tracking-tighter">Nilai</span>
-          </div>
+          {/* Kotak Nilai Kosong Standar Guru (Tanpa Tulisan Nilai) */}
+          <div className="border-2 border-black rounded w-[56px] h-[34px] shrink-0 bg-white" />
         </div>
 
         {/* Isian Identitas Siswa */}
@@ -75,12 +86,15 @@ const SingleSlot: React.FC<{
       </div>
 
       {/* Slot Body: 2 Kolom (Kiri: Grid TTS, Kanan: Soal Mendatar & Menurun) */}
-      <div className="flex gap-4 items-start flex-1 mt-2 overflow-hidden">
-        {/* Kolom Kiri (~55%): Grid TTS */}
-        <div className="w-[370px] shrink-0 flex justify-center items-center h-full">
+      <div className="flex gap-3.5 items-start flex-1 mt-2 overflow-hidden">
+        {/* Kolom Kiri: Grid TTS (Lebar fleksibel menyesuaikan grid) */}
+        <div
+          className="shrink-0 flex justify-center items-center h-full"
+          style={{ width: `${Math.max(260, Math.min(390, gridW * cellSize + 12))}px` }}
+        >
           {layout.width > 0 ? (
             <div
-              className="grid gap-0 border-2 border-black bg-neutral-100"
+              className="grid gap-0 border-2 border-black bg-neutral-100 shadow-2xs"
               style={{
                 gridTemplateColumns: `repeat(${layout.width}, ${cellSize}px)`,
                 gridTemplateRows: `repeat(${layout.height}, ${cellSize}px)`,
@@ -118,7 +132,7 @@ const SingleSlot: React.FC<{
                         <span
                           className="absolute top-[0.5px] left-[1.5px] font-mono leading-none font-bold text-black select-none"
                           style={{
-                            fontSize: `${Math.max(6, Math.floor(cellSize * 0.28))}px`,
+                            fontSize: `${Math.max(5.5, Math.floor(cellSize * 0.29))}px`,
                             color: '#000000',
                           }}
                         >
@@ -129,7 +143,7 @@ const SingleSlot: React.FC<{
                         <span
                           className="font-mono font-black text-black uppercase select-none"
                           style={{
-                            fontSize: `${Math.max(9, Math.floor(cellSize * 0.55))}px`,
+                            fontSize: `${Math.max(8, Math.floor(cellSize * 0.58))}px`,
                             color: '#000000',
                           }}
                         >
@@ -148,23 +162,23 @@ const SingleSlot: React.FC<{
           )}
         </div>
 
-        {/* Kolom Kanan (~45%): Soal Mendatar & Menurun */}
-        <div className="flex-1 flex flex-col gap-2 h-full overflow-hidden text-[10.5px] leading-tight">
+        {/* Kolom Kanan: Soal Mendatar & Menurun (Memanfaatkan seluruh sisa ruang kosong) */}
+        <div className={`flex-1 flex flex-col gap-1.5 h-full overflow-hidden ${clueTextClass}`}>
           {/* Mendatar */}
           {acrossWords.length > 0 && (
             <div>
-              <div className="font-extrabold text-[10px] uppercase tracking-wider border-b border-black pb-0.5 mb-1 flex items-center justify-between text-black">
+              <div className="font-extrabold text-[9.5px] uppercase tracking-wider border-b border-black pb-0.5 mb-1 flex items-center justify-between text-black">
                 <span>Mendatar</span>
-                <span className="text-[9px] font-semibold text-neutral-600">({acrossWords.length})</span>
+                <span className="text-[8.5px] font-semibold text-neutral-600">({acrossWords.length})</span>
               </div>
-              <ol className="space-y-1">
+              <ol className={clueGapClass}>
                 {acrossWords.map((item) => (
                   <li key={item.id} className="flex gap-1 items-start">
-                    <span className="font-bold min-w-[14px] text-black shrink-0">{item.number}.</span>
+                    <span className="font-bold min-w-[13px] text-black shrink-0">{item.number}.</span>
                     <div className="flex-1">
                       <span className="text-black break-words font-medium">{item.clue}</span>
                       {showAnswerKey && (
-                        <span className="font-mono font-bold text-emerald-800 ml-1 bg-emerald-50 px-0.5 rounded border border-emerald-300 text-[9px]">
+                        <span className="font-mono font-bold text-emerald-800 ml-1 bg-emerald-50 px-0.5 rounded border border-emerald-300 text-[8.5px]">
                           [{item.word}]
                         </span>
                       )}
@@ -178,18 +192,18 @@ const SingleSlot: React.FC<{
           {/* Menurun */}
           {downWords.length > 0 && (
             <div>
-              <div className="font-extrabold text-[10px] uppercase tracking-wider border-b border-black pb-0.5 mb-1 flex items-center justify-between text-black">
+              <div className="font-extrabold text-[9.5px] uppercase tracking-wider border-b border-black pb-0.5 mb-1 flex items-center justify-between text-black">
                 <span>Menurun</span>
-                <span className="text-[9px] font-semibold text-neutral-600">({downWords.length})</span>
+                <span className="text-[8.5px] font-semibold text-neutral-600">({downWords.length})</span>
               </div>
-              <ol className="space-y-1">
+              <ol className={clueGapClass}>
                 {downWords.map((item) => (
                   <li key={item.id} className="flex gap-1 items-start">
-                    <span className="font-bold min-w-[14px] text-black shrink-0">{item.number}.</span>
+                    <span className="font-bold min-w-[13px] text-black shrink-0">{item.number}.</span>
                     <div className="flex-1">
                       <span className="text-black break-words font-medium">{item.clue}</span>
                       {showAnswerKey && (
-                        <span className="font-mono font-bold text-emerald-800 ml-1 bg-emerald-50 px-0.5 rounded border border-emerald-300 text-[9px]">
+                        <span className="font-mono font-bold text-emerald-800 ml-1 bg-emerald-50 px-0.5 rounded border border-emerald-300 text-[8.5px]">
                           [{item.word}]
                         </span>
                       )}
