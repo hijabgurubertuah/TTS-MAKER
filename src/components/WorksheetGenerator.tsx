@@ -5,6 +5,7 @@ import {
   Printer,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   RefreshCw,
   Image as ImageIcon,
   Check,
@@ -115,6 +116,7 @@ export const WorksheetGenerator: React.FC = () => {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfSuccess, setPdfSuccess] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [showPromptGuide, setShowPromptGuide] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Toast notification state
@@ -696,34 +698,61 @@ export const WorksheetGenerator: React.FC = () => {
           </div>
         )}
 
-        {/* Kolom Prompt ChatGPT di Paling Atas */}
-        <div className="p-3.5 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700/80 rounded-xl text-xs space-y-2">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <span className="font-bold text-neutral-800 dark:text-neutral-200 flex items-start sm:items-center gap-1.5 leading-snug">
-              <span className="shrink-0">💡</span> Salin Prompt ini lalu tempel ke ChatGPT, Sesuaikan Materi dan Jumlah Soalnya.
-            </span>
-            <button
-              type="button"
-              onClick={handleCopyPrompt}
-              title="Salin prompt untuk ChatGPT"
-              className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold rounded-lg transition text-xs cursor-pointer shadow-2xs w-full sm:w-auto"
-            >
-              {copiedPrompt ? (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Tersalin!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Salin Prompt</span>
-                </>
-              )}
-            </button>
-          </div>
-          <div className="p-2.5 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-700/70 text-neutral-700 dark:text-neutral-300 font-mono text-[11px] sm:text-xs leading-relaxed select-all break-words">
-            {chatGptPrompt}
-          </div>
+        {/* Tombol Layang Lebar Petunjuk Prompt ChatGPT (Default Tersembunyi) */}
+        <div className="w-full">
+          <button
+            type="button"
+            onClick={() => setShowPromptGuide((prev) => !prev)}
+            aria-expanded={showPromptGuide}
+            className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-between gap-2 cursor-pointer shadow-xs border ${
+              showPromptGuide
+                ? 'bg-amber-500 text-neutral-950 border-amber-600 dark:bg-amber-500 dark:text-neutral-950 dark:border-amber-400 ring-2 ring-amber-400/50'
+                : 'bg-amber-50 hover:bg-amber-100/90 active:bg-amber-100 text-amber-900 border-amber-300/80 dark:bg-amber-950/40 dark:hover:bg-amber-950/70 dark:text-amber-200 dark:border-amber-800/80'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-base">💡</span>
+              <span className="tracking-wide uppercase">Petunjuk</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
+              <span>{showPromptGuide ? 'Tutup Petunjuk' : 'Buka Prompt AI / ChatGPT'}</span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform duration-200 ${showPromptGuide ? 'rotate-180' : ''}`}
+              />
+            </div>
+          </button>
+
+          {/* Kolom Prompt ChatGPT (Hanya Muncul Jika Tombol Petunjuk Ditekan) */}
+          {showPromptGuide && (
+            <div className="mt-2.5 p-3.5 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700/80 rounded-xl text-xs space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="font-bold text-neutral-800 dark:text-neutral-200 flex items-start sm:items-center gap-1.5 leading-snug">
+                  <span className="shrink-0">💡</span> Salin Prompt ini lalu tempel ke ChatGPT, Sesuaikan Materi dan Jumlah Soalnya.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyPrompt}
+                  title="Salin prompt untuk ChatGPT"
+                  className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold rounded-lg transition text-xs cursor-pointer shadow-2xs w-full sm:w-auto"
+                >
+                  {copiedPrompt ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Salin Prompt</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="p-2.5 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-700/70 text-neutral-700 dark:text-neutral-300 font-mono text-[11px] sm:text-xs leading-relaxed select-all break-words">
+                {chatGptPrompt}
+              </div>
+            </div>
+          )}
         </div>
 
         <div>
