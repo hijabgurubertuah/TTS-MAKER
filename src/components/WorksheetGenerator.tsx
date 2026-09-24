@@ -8,28 +8,39 @@ import {
   Image as ImageIcon,
   Check,
   AlertCircle,
+  Copy,
 } from 'lucide-react';
 import { generateCrossword, parseRawInput } from '../utils/crosswordGenerator';
 import { CrosswordLayout } from '../types';
 
-const INITIAL_WORDS = `FOTOSINTESIS Proses pembuatan makanan pada tumbuhan hijau dengan bantuan cahaya matahari
-KLOROFIL Zat hijau daun yang berperan penting dalam fotosintesis
-MITOKONDRIA Organel sel yang berfungsi sebagai penghasil energi atau pernapasan sel
-OKSIGEN Gas yang dihasilkan dari proses fotosintesis dan dihirup manusia
-STOMATA Mulut daun tempat terjadinya pertukaran gas
-OSMOSIS Perpindahan molekul pelarut melewati membran semipermeabel
-GENETIKA Cabang biologi yang mempelajari pewarisan sifat pada makhluk hidup
-HERBIVORA Hewan pemakan tumbuh-tumbuhan
-EKOSISTEM Hubungan timbal balik antara makhluk hidup dengan lingkungannya
-KROMOSOM Struktur pembawa materi genetik di dalam inti sel`;
-
 export const WorksheetGenerator: React.FC = () => {
-  const [title, setTitle] = useState('Teka-Teki Silang IPA Biologi');
-  const [rawWords, setRawWords] = useState(INITIAL_WORDS);
+  const [title, setTitle] = useState('');
+  const [rawWords, setRawWords] = useState('');
   const [seed, setSeed] = useState(42);
   const [showAnswerKey, setShowAnswerKey] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+
+  const chatGptPrompt =
+    'Jadilah Ahli dalam membuat Jawaban dan soal TTS mata pelajaran ...  kelas.... Buatkan soal dan jawaban untuk dijadikan teka teki silang dengan jawaban hanya berupa satu kata atau istilah penting untuk materi....... Dengan format JAWABAN[spasi]PETUNJUK atau SOAL, satu soal per baris.';
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(chatGptPrompt);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    } catch {
+      const textArea = document.createElement('textarea');
+      textArea.value = chatGptPrompt;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    }
+  };
 
   const worksheetRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -96,7 +107,7 @@ export const WorksheetGenerator: React.FC = () => {
       <div className="print:hidden bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 md:p-6 shadow-sm space-y-4">
         <div>
           <label className="block text-sm font-bold text-neutral-800 dark:text-neutral-200 mb-1.5">
-            Judul Teka-Teki Silang
+            Judul
           </label>
           <input
             type="text"
@@ -110,7 +121,7 @@ export const WorksheetGenerator: React.FC = () => {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="block text-sm font-bold text-neutral-800 dark:text-neutral-200">
-              Daftar Kata Jawaban &amp; Petunjuk
+              JAWABAN &lt;spasi&gt; Soal
             </label>
             <span className="text-xs text-neutral-500 font-mono">
               {parsedItems.length} Kata terdeteksi
@@ -120,11 +131,12 @@ export const WorksheetGenerator: React.FC = () => {
             ref={textareaRef}
             value={rawWords}
             onChange={(e) => setRawWords(e.target.value)}
+            wrap="off"
             placeholder="JAWABAN Petunjuk pertanyaan...&#10;JAWABAN2 Petunjuk pertanyaan kedua..."
-            className="w-full font-mono text-xs md:text-sm p-3.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none leading-relaxed shadow-2xs overflow-hidden resize-y transition-[height] duration-75"
+            className="w-full font-mono text-xs md:text-sm p-3.5 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-neutral-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-none leading-relaxed shadow-2xs whitespace-pre overflow-x-auto overflow-y-hidden resize-y transition-[height] duration-75"
             style={{ minHeight: '180px' }}
           />
-          <div className="flex justify-between items-center text-[11px] text-neutral-500 mt-1">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-[11px] text-neutral-500 mt-1 gap-1">
             <span>Format: <code>JAWABAN Petunjuk pertanyaan</code> (pisahkan dengan spasi, 1 baris per kata)</span>
             {layout.unplacedWords.length > 0 && (
               <span className="text-amber-600 font-medium flex items-center gap-1">
@@ -132,6 +144,36 @@ export const WorksheetGenerator: React.FC = () => {
                 {layout.unplacedWords.length} kata belum bersilangan (coba ganti variasi di bawah)
               </span>
             )}
+          </div>
+
+          {/* Petunjuk Pembuatan Jawaban & Soal TTS Menggunakan ChatGPT */}
+          <div className="mt-3 p-3.5 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700/80 rounded-xl text-xs space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                <span>💡</span> Petunjuk pembuatan jawaban dan soal TTS menggunakan ChatGPT:
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyPrompt}
+                title="Salin prompt untuk ChatGPT"
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold rounded-lg transition text-xs cursor-pointer shadow-2xs"
+              >
+                {copiedPrompt ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Tersalin!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Salin Prompt</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="p-2.5 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-700/70 text-neutral-700 dark:text-neutral-300 font-mono text-[11px] sm:text-xs leading-relaxed select-all">
+              {chatGptPrompt}
+            </div>
           </div>
         </div>
       </div>
@@ -146,8 +188,8 @@ export const WorksheetGenerator: React.FC = () => {
         <div className="border-b-2 border-black pb-4 mb-6">
           <div className="flex justify-between items-start">
             <div>
-              <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase text-black">
-                {title.trim() || 'TEKA-TEKI SILANG'}
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase text-black min-h-[36px]">
+                {title.trim()}
               </h1>
             </div>
             {/* Kotak Nilai Kosong Tanpa Tulisan */}

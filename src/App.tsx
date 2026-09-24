@@ -1,15 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Grid3X3, Moon, Sun } from 'lucide-react';
 import { WorksheetGenerator } from './components/WorksheetGenerator';
 
 export default function App() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    return localStorage.getItem('tts_theme') === 'dark';
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('tts_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('tts_theme', 'light');
+    }
+  }, [isDarkMode]);
 
   return (
     <div
       className={`${
         isDarkMode ? 'dark' : ''
-      } min-h-screen bg-neutral-100/80 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans transition-colors`}
+      } min-h-screen bg-neutral-100/80 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans transition-colors duration-200`}
     >
       {/* Top Navbar - Hidden when printing */}
       <header className="print:hidden sticky top-0 z-30 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-b border-neutral-200 dark:border-neutral-800 shadow-xs">
