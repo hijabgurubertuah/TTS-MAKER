@@ -9,6 +9,7 @@ import {
   Check,
   AlertCircle,
   Copy,
+  Sparkles,
 } from 'lucide-react';
 import { generateCrossword, parseRawInput } from '../utils/crosswordGenerator';
 import { CrosswordLayout } from '../types';
@@ -66,13 +67,56 @@ export const WorksheetGenerator: React.FC = () => {
     return generateCrossword(parsedItems, seed);
   }, [parsedItems, seed]);
 
-  // Dynamic cell size to ensure crossword grid fits seamlessly on 794px A4 sheet
+  // Dynamic cell size to ensure crossword grid and questions fit comfortably on 1 single A4 sheet
   const cellSize = useMemo(() => {
-    if (!layout.width || layout.width <= 0) return 32;
-    const maxAvailableWidth = 660; // 794px - (padding * 2) - margin
-    const calculated = Math.floor(maxAvailableWidth / layout.width);
-    return Math.min(32, Math.max(16, calculated));
-  }, [layout.width]);
+    if (!layout.width || layout.width <= 0) return 26;
+    const maxAvailableWidth = 680;
+    const maxAvailableHeight = 430; // Max height to strictly maintain 1-page boundary
+    const calculatedW = Math.floor(maxAvailableWidth / layout.width);
+    const calculatedH = Math.floor(maxAvailableHeight / (layout.height || 1));
+    const calculated = Math.min(calculatedW, calculatedH);
+    return Math.min(26, Math.max(16, calculated));
+  }, [layout.width, layout.height]);
+
+  // Find the optimal seed that fits on 1 sheet with 100% placed words and most compact area
+  const findOptimalSeed = () => {
+    if (parsedItems.length === 0) return 42;
+    let bestS = seed;
+    let minUnplaced = Infinity;
+    let minArea = Infinity;
+
+    // Evaluate seeds 1 to 40
+    for (let s = 1; s <= 40; s++) {
+      const res = generateCrossword(parsedItems, s);
+      const unplaced = res.unplacedWords.length;
+      const area = (res.width || 50) * (res.height || 50);
+
+      if (unplaced < minUnplaced) {
+        minUnplaced = unplaced;
+        minArea = area;
+        bestS = s;
+      } else if (unplaced === minUnplaced && area < minArea) {
+        minArea = area;
+        bestS = s;
+      }
+    }
+    return bestS;
+  };
+
+  const handleAutoFit = () => {
+    const optimal = findOptimalSeed();
+    setSeed(optimal);
+  };
+
+  // Auto-optimize to best seed if current layout has unplaced words when items change
+  useEffect(() => {
+    if (parsedItems.length >= 2 && layout.unplacedWords.length > 0) {
+      const optimal = findOptimalSeed();
+      if (optimal !== seed) {
+        setSeed(optimal);
+      }
+    }
+  }, [parsedItems.length]);
 
   // Measure container and worksheet to provide exact WYSIWYG scale on mobile
   useEffect(() => {
@@ -234,10 +278,13 @@ export const WorksheetGenerator: React.FC = () => {
       {/* Pratinjau Lembar Kerja (Worksheet) - Responsive WYSIWYG Container */}
       <div className="w-full flex flex-col items-center">
         {/* Mobile WYSIWYG Indicator & Mode Toggle */}
-        <div className="print:hidden w-full max-w-[794px] flex items-center justify-between px-2 mb-2.5 text-xs text-neutral-500 dark:text-neutral-400">
+        <div className="print:hidden w-full max-w-[794px] flex items-center justify-between px-2 mb-2 text-xs text-neutral-500 dark:text-neutral-400">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-neutral-700 dark:text-neutral-300">
-              Pratinjau Kertas A4 (WYSIWYG)
+            <span className="font-bold text-neutral-900 dark:text-white text-sm">
+              Pratinjau
+            </span>
+            <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+              ✓ 1 Lembar Pas
             </span>
             {scale < 1 && (
               <span className="text-[10px] font-mono bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 px-2 py-0.5 rounded-full font-medium">
@@ -245,15 +292,26 @@ export const WorksheetGenerator: React.FC = () => {
               </span>
             )}
           </div>
-          {scale < 1 && (
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIsFitMode(!isFitMode)}
-              className="text-[11px] px-2.5 py-1 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs"
+              onClick={handleAutoFit}
+              title="Pilih susunan paling ringkas dan pas untuk 1 lembar kertas"
+              className="text-[11px] px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-neutral-950 font-bold transition cursor-pointer shadow-2xs flex items-center gap-1"
             >
-              {isFitMode ? '🔍 Perbesar 100%' : '📱 Muat Utuh (Fit HP)'}
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Susunan Pas 1 Lembar</span>
             </button>
-          )}
+            {scale < 1 && (
+              <button
+                type="button"
+                onClick={() => setIsFitMode(!isFitMode)}
+                className="text-[11px] px-2.5 py-1 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs"
+              >
+                {isFitMode ? '🔍 100%' : '📱 Fit HP'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Viewport Box */}
@@ -293,30 +351,30 @@ export const WorksheetGenerator: React.FC = () => {
               <div
                 ref={worksheetRef}
                 id="worksheet-a4-page"
-                className="bg-white text-black p-10 rounded-2xl shadow-xl border border-neutral-300 print:!border-none print:!shadow-none print:!p-0 print:!m-0 print:!w-full print:!rounded-none"
+                className="bg-white text-black p-7 sm:p-8 rounded-2xl shadow-xl border border-neutral-300 print:!border-none print:!shadow-none print:!p-0 print:!m-0 print:!w-full print:!rounded-none"
                 style={{ width: '794px', minHeight: '1123px' }}
               >
-                {/* Header Soal Siswa */}
-                <div className="border-b-2 border-black pb-4 mb-6">
+                {/* Header Soal Siswa - Ringkas & Proporsional */}
+                <div className="border-b-2 border-black pb-2.5 mb-3">
                   <div className="flex justify-between items-start">
-                    <div>
-                      <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase text-black min-h-[36px]">
+                    <div className="flex-1 pr-4">
+                      <h1 className="text-xl md:text-2xl font-black tracking-tight uppercase text-black min-h-[28px] leading-snug">
                         {title.trim()}
                       </h1>
                     </div>
                     {/* Kotak Nilai Kosong Tanpa Tulisan */}
-                    <div className="border-2 border-black rounded w-[85px] h-[65px]" />
+                    <div className="border-2 border-black rounded w-[72px] h-[52px] shrink-0" />
                   </div>
 
-                  {/* Isian Identitas Siswa: Hanya Nama dan Kelas */}
-                  <div className="grid grid-cols-2 gap-6 mt-4 pt-3 border-t border-dashed border-neutral-500 text-xs font-semibold">
+                  {/* Isian Identitas Siswa: Nama dan Kelas */}
+                  <div className="grid grid-cols-2 gap-4 mt-2 pt-2 border-t border-dashed border-neutral-400 text-xs font-semibold">
                     <div>Nama: ____________________________________</div>
                     <div>Kelas: _________________</div>
                   </div>
                 </div>
 
-                {/* Crossword Grid Table dengan latar abu-abu pucat */}
-                <div className="flex justify-center my-6 overflow-hidden">
+                {/* Crossword Grid Table */}
+                <div className="flex justify-center my-3 overflow-hidden">
                   {layout.width > 0 ? (
                     <div
                       className="grid gap-0 border-2 border-neutral-900 bg-neutral-100 shadow-xs"
@@ -348,7 +406,7 @@ export const WorksheetGenerator: React.FC = () => {
                               {cell.number !== undefined && (
                                 <span
                                   className={`absolute top-[1px] left-[2px] ${
-                                    cellSize < 24 ? 'text-[7px]' : 'text-[8px]'
+                                    cellSize < 22 ? 'text-[6px]' : cellSize < 26 ? 'text-[7px]' : 'text-[8px]'
                                   } font-mono leading-none font-bold text-neutral-900 select-none`}
                                 >
                                   {cell.number}
@@ -357,7 +415,7 @@ export const WorksheetGenerator: React.FC = () => {
                               {showAnswerKey && (
                                 <span
                                   className={`font-mono font-black ${
-                                    cellSize < 24 ? 'text-xs' : 'text-sm'
+                                    cellSize < 22 ? 'text-[10px]' : cellSize < 26 ? 'text-xs' : 'text-sm'
                                   } text-black uppercase select-none`}
                                 >
                                   {cell.letter}
@@ -369,28 +427,28 @@ export const WorksheetGenerator: React.FC = () => {
                       )}
                     </div>
                   ) : (
-                    <div className="p-8 text-neutral-500 italic text-center">
+                    <div className="p-8 text-neutral-500 italic text-center text-xs">
                       Masukkan kata jawaban dan petunjuk untuk menghasilkan kotak teka-teki silang.
                     </div>
                   )}
                 </div>
 
-                {/* Clues Section: Mendatar & Menurun (Selalu 2 kolom berdampingan persis cetak A4 / WYSIWYG) */}
-                <div className="grid grid-cols-2 gap-8 mt-8 pt-4 border-t-2 border-black">
+                {/* Clues Section: Mendatar & Menurun - 2 Kolom Rapi */}
+                <div className="grid grid-cols-2 gap-6 mt-3 pt-2.5 border-t-2 border-black">
                   {/* Mendatar (Across) */}
                   <div>
-                    <h3 className="font-extrabold text-sm uppercase tracking-wider border-b-2 border-black pb-1 mb-3 flex items-center justify-between text-black">
+                    <h3 className="font-extrabold text-xs uppercase tracking-wider border-b-2 border-black pb-1 mb-2 flex items-center justify-between text-black">
                       <span>Mendatar</span>
-                      <span className="text-xs font-semibold text-neutral-700">({acrossWords.length} Soal)</span>
+                      <span className="text-[11px] font-semibold text-neutral-700">({acrossWords.length} Soal)</span>
                     </h3>
-                    <ol className="space-y-2 text-xs leading-relaxed">
+                    <ol className="space-y-1.5 text-[11px] leading-snug">
                       {acrossWords.map((item) => (
-                        <li key={item.id} className="flex gap-2 items-start">
-                          <span className="font-black min-w-[22px] text-neutral-900">{item.number}.</span>
+                        <li key={item.id} className="flex gap-1.5 items-start">
+                          <span className="font-black min-w-[18px] text-neutral-900">{item.number}.</span>
                           <div className="flex-1">
                             <span className="text-black break-words">{item.clue}</span>
                             {showAnswerKey && (
-                              <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300">
+                              <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300 text-[10px]">
                                 [{item.word}]
                               </span>
                             )}
@@ -402,18 +460,18 @@ export const WorksheetGenerator: React.FC = () => {
 
                   {/* Menurun (Down) */}
                   <div>
-                    <h3 className="font-extrabold text-sm uppercase tracking-wider border-b-2 border-black pb-1 mb-3 flex items-center justify-between text-black">
+                    <h3 className="font-extrabold text-xs uppercase tracking-wider border-b-2 border-black pb-1 mb-2 flex items-center justify-between text-black">
                       <span>Menurun</span>
-                      <span className="text-xs font-semibold text-neutral-700">({downWords.length} Soal)</span>
+                      <span className="text-[11px] font-semibold text-neutral-700">({downWords.length} Soal)</span>
                     </h3>
-                    <ol className="space-y-2 text-xs leading-relaxed">
+                    <ol className="space-y-1.5 text-[11px] leading-snug">
                       {downWords.map((item) => (
-                        <li key={item.id} className="flex gap-2 items-start">
-                          <span className="font-black min-w-[22px] text-neutral-900">{item.number}.</span>
+                        <li key={item.id} className="flex gap-1.5 items-start">
+                          <span className="font-black min-w-[18px] text-neutral-900">{item.number}.</span>
                           <div className="flex-1">
                             <span className="text-black break-words">{item.clue}</span>
                             {showAnswerKey && (
-                              <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300">
+                              <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300 text-[10px]">
                                 [{item.word}]
                               </span>
                             )}
