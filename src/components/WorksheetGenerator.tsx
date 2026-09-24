@@ -603,144 +603,143 @@ export const WorksheetGenerator: React.FC = () => {
         </div>
       )}
 
-      {/* Selector Layout Cetak (1 TTS vs 2 TTS Hemat Kertas) */}
-      <div className="print:hidden bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
+      {/* Selector Layout Cetak (1 TTS vs 2 TTS Hemat Kertas) - Minimalis & Gambar Saja */}
+      <div className="print:hidden bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <LayoutGrid className="w-4 h-4 text-amber-500" />
-            <h2 className="text-sm font-bold text-neutral-900 dark:text-white">
-              Layout Cetak Kertas A4
-            </h2>
+            <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
+              Layout Cetak:
+            </span>
           </div>
-          <span className="text-[11px] text-neutral-500 font-medium">
-            Standar Portrait 210 × 297 mm
-          </span>
-        </div>
 
-        {/* Option Buttons: Layout A vs Layout B */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Opsi A: 1 TTS per Halaman */}
-          <button
-            type="button"
-            onClick={() => handleSelectLayout('1_per_page')}
-            className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 cursor-pointer ${
-              printLayout === '1_per_page'
-                ? 'bg-amber-500/10 border-amber-500 dark:border-amber-400 text-neutral-900 dark:text-white ring-2 ring-amber-500/20'
-                : 'bg-neutral-50 dark:bg-neutral-800/50 border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400'
-            }`}
-          >
-            <div className={`w-8 h-10 rounded border-2 shrink-0 flex flex-col items-center justify-center p-0.5 ${
-              printLayout === '1_per_page' ? 'border-amber-500 bg-amber-500/20' : 'border-neutral-400'
-            }`}>
-              <div className="w-full h-3 border border-dashed border-current mb-0.5 rounded-2xs" />
-              <div className="w-full h-4 border border-current rounded-2xs" />
-            </div>
-            <div>
-              <div className="font-bold text-xs sm:text-sm text-neutral-900 dark:text-white flex items-center gap-1.5">
-                <span>1 TTS per Halaman A4</span>
-                {printLayout === '1_per_page' && <span className="text-[10px] bg-amber-500 text-neutral-950 font-extrabold px-1.5 py-0.2 rounded">Aktif</span>}
+          {/* Tombol-tombol Layout Cuma Gambar Saja Tanpa Keterangan */}
+          <div className="flex items-center gap-2">
+            {/* Opsi A: 1 TTS per Halaman (Gambar Miniatur A4) */}
+            <button
+              type="button"
+              onClick={() => handleSelectLayout('1_per_page')}
+              title="1 TTS per Halaman A4"
+              className={`p-1.5 rounded-xl border-2 transition cursor-pointer flex flex-col items-center justify-center ${
+                printLayout === '1_per_page'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-2 ring-amber-500/20 shadow-xs scale-105'
+                  : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 text-neutral-400 hover:border-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 opacity-70 hover:opacity-100'
+              }`}
+            >
+              {/* Miniatur A4 1 TTS */}
+              <div className="w-7 h-9 rounded-xs border border-current p-0.5 flex flex-col justify-between bg-white dark:bg-neutral-950">
+                <div className="w-full h-4 border border-current/80 rounded-2xs bg-current/20 flex items-center justify-center">
+                  <div className="w-2.5 h-2.5 grid grid-cols-2 gap-0.5 opacity-60">
+                    <div className="bg-current rounded-2xs" />
+                    <div className="bg-current rounded-2xs" />
+                    <div className="bg-current rounded-2xs" />
+                    <div className="bg-current rounded-2xs" />
+                  </div>
+                </div>
+                <div className="w-full space-y-0.5">
+                  <div className="w-full h-0.5 bg-current/60 rounded" />
+                  <div className="w-2/3 h-0.5 bg-current/60 rounded" />
+                </div>
               </div>
-              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 leading-snug">
-                Ukuran standar besar (Grid di atas, daftar petunjuk 2 kolom di bawah).
-              </p>
-            </div>
-          </button>
+            </button>
 
-          {/* Opsi B: 2 TTS per Halaman (Hemat Kertas) */}
-          <button
-            type="button"
-            onClick={() => handleSelectLayout('2_per_page')}
-            className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 cursor-pointer ${
-              printLayout === '2_per_page'
-                ? 'bg-amber-500/10 border-amber-500 dark:border-amber-400 text-neutral-900 dark:text-white ring-2 ring-amber-500/20'
-                : 'bg-neutral-50 dark:bg-neutral-800/50 border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400'
-            }`}
-          >
-            <div className={`w-8 h-10 rounded border-2 shrink-0 flex flex-col justify-between p-0.5 ${
-              printLayout === '2_per_page' ? 'border-amber-500 bg-amber-500/20' : 'border-neutral-400'
-            }`}>
-              <div className="w-full h-3.5 border border-current rounded-2xs" />
-              <div className="w-full border-t border-dashed border-current my-0.5" />
-              <div className="w-full h-3.5 border border-current rounded-2xs" />
-            </div>
-            <div>
-              <div className="font-bold text-xs sm:text-sm text-neutral-900 dark:text-white flex items-center gap-1.5">
-                <span>2 TTS per Halaman A4</span>
-                <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-extrabold px-1.5 py-0.2 rounded border border-emerald-300 dark:border-emerald-800">
-                  Hemat Kertas
-                </span>
+            {/* Opsi B: 2 TTS per Halaman (Gambar Miniatur A4 2 Bagian) */}
+            <button
+              type="button"
+              onClick={() => handleSelectLayout('2_per_page')}
+              title="2 TTS per Halaman A4 (Hemat Kertas)"
+              className={`p-1.5 rounded-xl border-2 transition cursor-pointer flex flex-col items-center justify-center ${
+                printLayout === '2_per_page'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-2 ring-amber-500/20 shadow-xs scale-105'
+                  : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 text-neutral-400 hover:border-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 opacity-70 hover:opacity-100'
+              }`}
+            >
+              {/* Miniatur A4 2 TTS Split */}
+              <div className="w-7 h-9 rounded-xs border border-current p-0.5 flex flex-col justify-between bg-white dark:bg-neutral-950">
+                <div className="w-full h-3 border border-current/80 rounded-2xs bg-current/20 flex items-center justify-between px-0.5">
+                  <div className="w-2 h-2 grid grid-cols-2 gap-px opacity-60">
+                    <div className="bg-current" />
+                    <div className="bg-current" />
+                    <div className="bg-current" />
+                    <div className="bg-current" />
+                  </div>
+                  <div className="w-2 space-y-px">
+                    <div className="w-full h-px bg-current" />
+                    <div className="w-full h-px bg-current" />
+                  </div>
+                </div>
+                <div className="w-full border-t border-dashed border-current my-px" />
+                <div className="w-full h-3 border border-current/80 rounded-2xs bg-current/20 flex items-center justify-between px-0.5">
+                  <div className="w-2 h-2 grid grid-cols-2 gap-px opacity-60">
+                    <div className="bg-current" />
+                    <div className="bg-current" />
+                    <div className="bg-current" />
+                    <div className="bg-current" />
+                  </div>
+                  <div className="w-2 space-y-px">
+                    <div className="w-full h-px bg-current" />
+                    <div className="w-full h-px bg-current" />
+                  </div>
+                </div>
               </div>
-              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 leading-snug">
-                1 lembar dipotong 2 bagian (Atas & Bawah) dengan garis potong.
-              </p>
-            </div>
-          </button>
+            </button>
+          </div>
         </div>
 
         {/* Sub-options for 2-per-page: Salin Sama vs Dua TTS Berbeda */}
         {printLayout === '2_per_page' && (
-          <div className="p-3 bg-neutral-100 dark:bg-neutral-800/70 rounded-xl border border-neutral-200 dark:border-neutral-700 space-y-2.5 animate-in fade-in">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                Pilihan Sumber Isi Slot:
-              </span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setTwoPerPageSource('same')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    twoPerPageSource === 'same'
-                      ? 'bg-amber-500 text-neutral-950 shadow-2xs'
-                      : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200'
-                  }`}
-                >
-                  <CopyCheck className="w-3.5 h-3.5" />
-                  <span>Salin Sama (2 Siswa)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTwoPerPageSource('different')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    twoPerPageSource === 'different'
-                      ? 'bg-amber-500 text-neutral-950 shadow-2xs'
-                      : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200'
-                  }`}
-                >
-                  <SplitSquareVertical className="w-3.5 h-3.5" />
-                  <span>Dua TTS Berbeda (Tipe A & B)</span>
-                </button>
-              </div>
+          <div className="p-2.5 bg-neutral-50 dark:bg-neutral-800/60 rounded-xl border border-neutral-200 dark:border-neutral-700/80 flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setTwoPerPageSource('same')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  twoPerPageSource === 'same'
+                    ? 'bg-amber-500 text-neutral-950 shadow-2xs'
+                    : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
+                }`}
+              >
+                <CopyCheck className="w-3.5 h-3.5" />
+                <span>Salin Sama</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTwoPerPageSource('different')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  twoPerPageSource === 'different'
+                    ? 'bg-amber-500 text-neutral-950 shadow-2xs'
+                    : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
+                }`}
+              >
+                <SplitSquareVertical className="w-3.5 h-3.5" />
+                <span>2 TTS Berbeda</span>
+              </button>
             </div>
 
             {twoPerPageSource === 'different' && (
-              <div className="flex items-center gap-2 pt-1 border-t border-neutral-200 dark:border-neutral-700">
-                <span className="text-[11px] font-semibold text-neutral-600 dark:text-neutral-400">
-                  Pilih TTS yang sedang diedit:
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setActiveEditorTab('tts1')}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition ${
-                      activeEditorTab === 'tts1'
-                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900'
-                        : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
-                    }`}
-                  >
-                    TTS 1 (Slot Atas)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveEditorTab('tts2')}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition ${
-                      activeEditorTab === 'tts2'
-                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900'
-                        : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
-                    }`}
-                  >
-                    TTS 2 (Slot Bawah)
-                  </button>
-                </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveEditorTab('tts1')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${
+                    activeEditorTab === 'tts1'
+                      ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-2xs'
+                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
+                  }`}
+                >
+                  TTS 1 (Atas)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveEditorTab('tts2')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${
+                    activeEditorTab === 'tts2'
+                      ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-2xs'
+                      : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
+                  }`}
+                >
+                  TTS 2 (Bawah)
+                </button>
               </div>
             )}
           </div>
@@ -1109,17 +1108,17 @@ export const WorksheetGenerator: React.FC = () => {
               ) : (
                 <FileDown className="w-4 h-4" />
               )}
-              <span>Unduh PDF (Soal)</span>
+              <span>Unduh PDF</span>
             </button>
             <button
               type="button"
               onClick={() => handleExportPdf(true)}
               disabled={isExportingPdf}
-              className="px-3 h-12 bg-neutral-800 hover:bg-neutral-900 active:scale-[0.98] text-amber-400 dark:bg-neutral-200 dark:hover:bg-neutral-300 dark:text-amber-800 font-bold transition flex items-center justify-center gap-1 text-xs cursor-pointer disabled:opacity-60"
+              className="px-3.5 h-12 bg-neutral-800 hover:bg-neutral-900 active:scale-[0.98] text-amber-400 dark:bg-neutral-200 dark:hover:bg-neutral-300 dark:text-amber-800 font-bold transition flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-60"
               title="Download Kunci Jawaban (Terisi) dalam format PDF A4"
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>+ Kunci</span>
+              <span>Unduh Kunci</span>
             </button>
           </div>
 
@@ -1137,17 +1136,17 @@ export const WorksheetGenerator: React.FC = () => {
               ) : (
                 <ImageIcon className="w-4 h-4" />
               )}
-              <span>Unduh Gambar (Soal)</span>
+              <span>Unduh Gambar</span>
             </button>
             <button
               type="button"
               onClick={() => handleExportImage(true)}
               disabled={isExporting}
-              className="px-3 h-12 bg-amber-600 hover:bg-amber-700 active:scale-[0.98] text-white font-bold transition flex items-center justify-center gap-1 text-xs cursor-pointer disabled:opacity-60"
+              className="px-3.5 h-12 bg-amber-600 hover:bg-amber-700 active:scale-[0.98] text-white font-bold transition flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-60"
               title="Download Kunci Jawaban (Terisi) dalam format Gambar PNG"
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>+ Kunci</span>
+              <span>Unduh Kunci</span>
             </button>
           </div>
         </div>
