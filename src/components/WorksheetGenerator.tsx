@@ -44,6 +44,12 @@ export const WorksheetGenerator: React.FC = () => {
 
   const worksheetRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const [scale, setScale] = useState<number>(1);
+  const [sheetHeight, setSheetHeight] = useState<number>(1123);
+  const [isFitMode, setIsFitMode] = useState<boolean>(true);
+  const [isExportingUnscaled, setIsExportingUnscaled] = useState<boolean>(false);
 
   // Auto-resize textarea agar kata-kata tidak tertutupi
   useEffect(() => {
@@ -59,6 +65,50 @@ export const WorksheetGenerator: React.FC = () => {
   const layout: CrosswordLayout = useMemo(() => {
     return generateCrossword(parsedItems, seed);
   }, [parsedItems, seed]);
+
+  // Dynamic cell size to ensure crossword grid fits seamlessly on 794px A4 sheet
+  const cellSize = useMemo(() => {
+    if (!layout.width || layout.width <= 0) return 32;
+    const maxAvailableWidth = 660; // 794px - (padding * 2) - margin
+    const calculated = Math.floor(maxAvailableWidth / layout.width);
+    return Math.min(32, Math.max(16, calculated));
+  }, [layout.width]);
+
+  // Measure container and worksheet to provide exact WYSIWYG scale on mobile
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        const cWidth = containerRef.current.clientWidth;
+        if (cWidth > 0) {
+          const targetWidth = 794; // Exact standard A4 width in px at 96 DPI
+          const calculatedScale = Math.min(1, cWidth / targetWidth);
+          setScale(calculatedScale);
+        }
+      }
+      if (worksheetRef.current) {
+        setSheetHeight(worksheetRef.current.offsetHeight || 1123);
+      }
+    };
+
+    updateDimensions();
+    const timer = setTimeout(updateDimensions, 100);
+
+    window.addEventListener('resize', updateDimensions);
+    const observer = new ResizeObserver(() => {
+      updateDimensions();
+    });
+
+    if (containerRef.current) observer.observe(containerRef.current);
+    if (worksheetRef.current) observer.observe(worksheetRef.current);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateDimensions);
+      observer.disconnect();
+    };
+  }, [layout, title, showAnswerKey, rawWords]);
+
+  const effectiveScale = isExportingUnscaled ? 1 : isFitMode ? scale : 1;
 
   const handleNextSeed = () => setSeed((prev) => prev + 1);
   const handlePrevSeed = () => setSeed((prev) => (prev > 1 ? prev - 1 : 9999));
@@ -76,11 +126,18 @@ export const WorksheetGenerator: React.FC = () => {
     if (!worksheetRef.current) return;
     try {
       setIsExporting(true);
+      // Temporarily render unscaled 1:1 view for crisp canvas capture
+      setIsExportingUnscaled(true);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
       const canvas = await html2canvas(worksheetRef.current, {
         scale: 2, // High resolution for crisp printing
         useCORS: true,
         backgroundColor: '#ffffff',
+        width: 794,
       });
+
+      setIsExportingUnscaled(false);
 
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
@@ -96,10 +153,9 @@ export const WorksheetGenerator: React.FC = () => {
       alert('Gagal mengekspor gambar. Silakan gunakan tombol Download PDF.');
     } finally {
       setIsExporting(false);
+      setIsExportingUnscaled(false);
     }
   };
-
-  const cellSize = 32; // Standard cell size in px
 
   return (
     <div className="space-y-6">
@@ -175,135 +231,206 @@ export const WorksheetGenerator: React.FC = () => {
         </div>
       </div>
 
-      {/* Pratinjau Lembar Kerja (Worksheet) */}
-      <div
-        ref={worksheetRef}
-        className="bg-white text-black p-8 md:p-12 rounded-2xl shadow-xl border border-neutral-300 max-w-4xl mx-auto print:border-none print:shadow-none print:p-0 print:m-0 print:max-w-none print:w-full"
-        style={{ minHeight: '950px' }}
-      >
-        {/* Header Soal Siswa */}
-        <div className="border-b-2 border-black pb-4 mb-6">
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase text-black min-h-[36px]">
-                {title.trim()}
-              </h1>
-            </div>
-            {/* Kotak Nilai Kosong Tanpa Tulisan */}
-            <div className="border-2 border-black rounded w-[85px] h-[65px]" />
+      {/* Pratinjau Lembar Kerja (Worksheet) - Responsive WYSIWYG Container */}
+      <div className="w-full flex flex-col items-center">
+        {/* Mobile WYSIWYG Indicator & Mode Toggle */}
+        <div className="print:hidden w-full max-w-[794px] flex items-center justify-between px-2 mb-2.5 text-xs text-neutral-500 dark:text-neutral-400">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-neutral-700 dark:text-neutral-300">
+              Pratinjau Kertas A4 (WYSIWYG)
+            </span>
+            {scale < 1 && (
+              <span className="text-[10px] font-mono bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 px-2 py-0.5 rounded-full font-medium">
+                {Math.round(effectiveScale * 100)}%
+              </span>
+            )}
           </div>
-
-          {/* Isian Identitas Siswa: Hanya Nama dan Kelas */}
-          <div className="grid grid-cols-2 gap-6 mt-4 pt-3 border-t border-dashed border-neutral-500 text-xs font-semibold">
-            <div>Nama: ____________________________________</div>
-            <div>Kelas: _________________</div>
-          </div>
-        </div>
-
-        {/* Crossword Grid Table dengan latar abu-abu pucat */}
-        <div className="flex justify-center my-6 overflow-hidden">
-          {layout.width > 0 ? (
-            <div
-              className="grid gap-0 border-2 border-neutral-900 bg-neutral-100 shadow-xs"
-              style={{
-                gridTemplateColumns: `repeat(${layout.width}, ${cellSize}px)`,
-                gridTemplateRows: `repeat(${layout.height}, ${cellSize}px)`,
-              }}
+          {scale < 1 && (
+            <button
+              type="button"
+              onClick={() => setIsFitMode(!isFitMode)}
+              className="text-[11px] px-2.5 py-1 rounded-lg bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold transition cursor-pointer shadow-2xs"
             >
-              {Array.from({ length: layout.height }).map((_, r) =>
-                Array.from({ length: layout.width }).map((_, c) => {
-                  const key = `${r},${c}`;
-                  const cell = layout.cells[key];
-
-                  if (!cell) {
-                    return (
-                      <div
-                        key={key}
-                        className="bg-neutral-200/60 w-full h-full border border-neutral-200/50"
-                      />
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={key}
-                      className="relative bg-white border border-neutral-900 flex items-center justify-center"
-                      style={{ width: cellSize, height: cellSize }}
-                    >
-                      {cell.number !== undefined && (
-                        <span className="absolute top-[1px] left-[2px] text-[8px] font-mono leading-none font-bold text-neutral-900 select-none">
-                          {cell.number}
-                        </span>
-                      )}
-                      {showAnswerKey && (
-                        <span className="font-mono font-black text-sm text-black uppercase select-none">
-                          {cell.letter}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          ) : (
-            <div className="p-8 text-neutral-500 italic text-center">
-              Masukkan kata jawaban dan petunjuk untuk menghasilkan kotak teka-teki silang.
-            </div>
+              {isFitMode ? '🔍 Perbesar 100%' : '📱 Muat Utuh (Fit HP)'}
+            </button>
           )}
         </div>
 
-        {/* Clues Section: Mendatar & Menurun */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8 pt-4 border-t-2 border-black">
-          {/* Mendatar (Across) */}
-          <div>
-            <h3 className="font-extrabold text-sm uppercase tracking-wider border-b-2 border-black pb-1 mb-3 flex items-center justify-between text-black">
-              <span>Mendatar</span>
-              <span className="text-xs font-semibold text-neutral-700">({acrossWords.length} Soal)</span>
-            </h3>
-            <ol className="space-y-2 text-xs leading-relaxed">
-              {acrossWords.map((item) => (
-                <li key={item.id} className="flex gap-2 items-start">
-                  <span className="font-black min-w-[22px] text-neutral-900">{item.number}.</span>
-                  <div className="flex-1">
-                    <span className="text-black">{item.clue}</span>
-                    {showAnswerKey && (
-                      <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300">
-                        [{item.word}]
-                      </span>
-                    )}
+        {/* Viewport Box */}
+        <div
+          ref={containerRef}
+          className={`w-full flex justify-center ${
+            !isFitMode && effectiveScale === 1 ? 'overflow-x-auto pb-4' : 'overflow-hidden'
+          }`}
+        >
+          <div
+            style={
+              effectiveScale < 1
+                ? {
+                    width: `${Math.round(794 * effectiveScale)}px`,
+                    height: `${Math.round(sheetHeight * effectiveScale)}px`,
+                  }
+                : {
+                    width: '794px',
+                  }
+            }
+            className="relative shrink-0 transition-all duration-150 print:!w-full print:!h-auto"
+          >
+            <div
+              style={
+                effectiveScale < 1
+                  ? {
+                      transform: `scale(${effectiveScale})`,
+                      transformOrigin: 'top left',
+                      width: '794px',
+                    }
+                  : {
+                      width: '794px',
+                    }
+              }
+              className="print:!transform-none print:!w-full"
+            >
+              <div
+                ref={worksheetRef}
+                id="worksheet-a4-page"
+                className="bg-white text-black p-10 rounded-2xl shadow-xl border border-neutral-300 print:!border-none print:!shadow-none print:!p-0 print:!m-0 print:!w-full print:!rounded-none"
+                style={{ width: '794px', minHeight: '1123px' }}
+              >
+                {/* Header Soal Siswa */}
+                <div className="border-b-2 border-black pb-4 mb-6">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase text-black min-h-[36px]">
+                        {title.trim()}
+                      </h1>
+                    </div>
+                    {/* Kotak Nilai Kosong Tanpa Tulisan */}
+                    <div className="border-2 border-black rounded w-[85px] h-[65px]" />
                   </div>
-                </li>
-              ))}
-            </ol>
-          </div>
 
-          {/* Menurun (Down) */}
-          <div>
-            <h3 className="font-extrabold text-sm uppercase tracking-wider border-b-2 border-black pb-1 mb-3 flex items-center justify-between text-black">
-              <span>Menurun</span>
-              <span className="text-xs font-semibold text-neutral-700">({downWords.length} Soal)</span>
-            </h3>
-            <ol className="space-y-2 text-xs leading-relaxed">
-              {downWords.map((item) => (
-                <li key={item.id} className="flex gap-2 items-start">
-                  <span className="font-black min-w-[22px] text-neutral-900">{item.number}.</span>
-                  <div className="flex-1">
-                    <span className="text-black">{item.clue}</span>
-                    {showAnswerKey && (
-                      <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300">
-                        [{item.word}]
-                      </span>
-                    )}
+                  {/* Isian Identitas Siswa: Hanya Nama dan Kelas */}
+                  <div className="grid grid-cols-2 gap-6 mt-4 pt-3 border-t border-dashed border-neutral-500 text-xs font-semibold">
+                    <div>Nama: ____________________________________</div>
+                    <div>Kelas: _________________</div>
                   </div>
-                </li>
-              ))}
-            </ol>
+                </div>
+
+                {/* Crossword Grid Table dengan latar abu-abu pucat */}
+                <div className="flex justify-center my-6 overflow-hidden">
+                  {layout.width > 0 ? (
+                    <div
+                      className="grid gap-0 border-2 border-neutral-900 bg-neutral-100 shadow-xs"
+                      style={{
+                        gridTemplateColumns: `repeat(${layout.width}, ${cellSize}px)`,
+                        gridTemplateRows: `repeat(${layout.height}, ${cellSize}px)`,
+                      }}
+                    >
+                      {Array.from({ length: layout.height }).map((_, r) =>
+                        Array.from({ length: layout.width }).map((_, c) => {
+                          const key = `${r},${c}`;
+                          const cell = layout.cells[key];
+
+                          if (!cell) {
+                            return (
+                              <div
+                                key={key}
+                                className="bg-neutral-200/60 w-full h-full border border-neutral-200/50"
+                              />
+                            );
+                          }
+
+                          return (
+                            <div
+                              key={key}
+                              className="relative bg-white border border-neutral-900 flex items-center justify-center"
+                              style={{ width: cellSize, height: cellSize }}
+                            >
+                              {cell.number !== undefined && (
+                                <span
+                                  className={`absolute top-[1px] left-[2px] ${
+                                    cellSize < 24 ? 'text-[7px]' : 'text-[8px]'
+                                  } font-mono leading-none font-bold text-neutral-900 select-none`}
+                                >
+                                  {cell.number}
+                                </span>
+                              )}
+                              {showAnswerKey && (
+                                <span
+                                  className={`font-mono font-black ${
+                                    cellSize < 24 ? 'text-xs' : 'text-sm'
+                                  } text-black uppercase select-none`}
+                                >
+                                  {cell.letter}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-neutral-500 italic text-center">
+                      Masukkan kata jawaban dan petunjuk untuk menghasilkan kotak teka-teki silang.
+                    </div>
+                  )}
+                </div>
+
+                {/* Clues Section: Mendatar & Menurun (Selalu 2 kolom berdampingan persis cetak A4 / WYSIWYG) */}
+                <div className="grid grid-cols-2 gap-8 mt-8 pt-4 border-t-2 border-black">
+                  {/* Mendatar (Across) */}
+                  <div>
+                    <h3 className="font-extrabold text-sm uppercase tracking-wider border-b-2 border-black pb-1 mb-3 flex items-center justify-between text-black">
+                      <span>Mendatar</span>
+                      <span className="text-xs font-semibold text-neutral-700">({acrossWords.length} Soal)</span>
+                    </h3>
+                    <ol className="space-y-2 text-xs leading-relaxed">
+                      {acrossWords.map((item) => (
+                        <li key={item.id} className="flex gap-2 items-start">
+                          <span className="font-black min-w-[22px] text-neutral-900">{item.number}.</span>
+                          <div className="flex-1">
+                            <span className="text-black break-words">{item.clue}</span>
+                            {showAnswerKey && (
+                              <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300">
+                                [{item.word}]
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  {/* Menurun (Down) */}
+                  <div>
+                    <h3 className="font-extrabold text-sm uppercase tracking-wider border-b-2 border-black pb-1 mb-3 flex items-center justify-between text-black">
+                      <span>Menurun</span>
+                      <span className="text-xs font-semibold text-neutral-700">({downWords.length} Soal)</span>
+                    </h3>
+                    <ol className="space-y-2 text-xs leading-relaxed">
+                      {downWords.map((item) => (
+                        <li key={item.id} className="flex gap-2 items-start">
+                          <span className="font-black min-w-[22px] text-neutral-900">{item.number}.</span>
+                          <div className="flex-1">
+                            <span className="text-black break-words">{item.clue}</span>
+                            {showAnswerKey && (
+                              <span className="font-mono font-bold text-emerald-800 ml-1.5 bg-emerald-50 px-1 rounded border border-emerald-300">
+                                [{item.word}]
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Tombol Kontrol & Aksi (Diletakkan di Bawah Pratinjau, Hidden saat Print) */}
-      <div className="print:hidden max-w-4xl mx-auto bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-4 rounded-2xl shadow-md">
+      <div className="print:hidden w-full max-w-[794px] mx-auto bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-3 sm:p-4 rounded-2xl shadow-md">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
           {/* Tombol Sebelumnya */}
           <button

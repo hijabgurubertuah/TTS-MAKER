@@ -52,7 +52,7 @@ export default function App() {
       </header>
 
       {/* Main Container */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 print:p-0 print:m-0 print:max-w-none">
+      <main className="max-w-6xl mx-auto px-2 sm:px-6 py-4 sm:py-6 print:p-0 print:m-0 print:max-w-none">
         <WorksheetGenerator />
       </main>
     </div>
